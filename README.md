@@ -7,6 +7,8 @@
 > Home Assistant yet: it may not render, it may break, and it will change without notice.
 > There is intentionally **no release** — treat everything here as unfinished.
 
+![Clawdmeter card — design mockup, not a live screenshot](images/card_preview.png)
+
 An animated Lovelace card for the
 [Clawdmeter](https://github.com/corgan2222/ha-clawdmeter) integration. It is meant to show
 Claude usage (session / weekly limits, burn rate, runway, time‑to‑limit) as an animated
