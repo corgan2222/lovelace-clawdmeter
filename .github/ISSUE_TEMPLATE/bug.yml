@@ -1,0 +1,99 @@
+---
+name: "Bug report"
+description: "Report a problem with the Clawdmeter Lovelace card"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Thanks for testing the card — it is still **work in progress**. Before
+        opening an issue, please **hard-refresh** your browser (Ctrl+Shift+R, or
+        clear the cache) to rule out a stale cached version, and search the
+        existing issues for the same problem.
+  - type: checkboxes
+    attributes:
+      label: Checklist
+      options:
+        - label: I hard-refreshed the browser (Ctrl+Shift+R) and the problem still happens.
+          required: true
+        - label: I filled out this template to the best of my ability.
+          required: true
+        - label: This issue contains exactly one problem.
+          required: true
+        # yamllint disable rule:line-length
+        - label: "This is not a duplicate of an [existing issue](https://github.com/corgan2222/lovelace-clawdmeter/issues?q=is%3Aissue+label%3Abug)."
+          # yamllint enable rule:line-length
+          required: true
+  - type: textarea
+    attributes:
+      label: "Describe the bug"
+      description: "A clear and concise description of what is wrong."
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: "Reproduction steps"
+      value: |
+        1.
+        2.
+        3.
+        ...
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: "Expected behavior"
+      description: "What you expected to happen instead."
+    validations:
+      required: false
+  - type: input
+    attributes:
+      label: "Card version"
+      description: "The installed release tag, or `main` / a commit SHA if installed from the branch."
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: "How is the card installed?"
+      options:
+        - HACS
+        - "Manual (dashboard resource / extra_module_url)"
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: "Home Assistant version"
+      placeholder: "e.g. 2026.6.0"
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: "Browser and OS"
+      description: "Where you see the problem."
+      placeholder: "e.g. Chrome 126 on Windows 11, or the HA companion app on Android"
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: "Card configuration (YAML)"
+      description: >-
+        The card's YAML — open the dashboard in edit mode, edit the card, and use
+        "Show code editor". Redact any tokens.
+      render: yaml
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: "Browser console errors"
+      description: >-
+        Open the browser DevTools (F12) → Console, reproduce the issue, and paste
+        any red errors here.
+      render: shell
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: "Screenshot"
+      description: "For a visual problem, drag a screenshot of the card here."
+    validations:
+      required: false
