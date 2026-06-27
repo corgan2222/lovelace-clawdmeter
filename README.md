@@ -18,8 +18,38 @@ The custom element is `clawdmeter-card` (so eventually: `type: custom:clawdmeter
 
 ## Status
 
-🚧 **Pre‑alpha.** The code is syntactically valid and Prettier‑formatted, but it has **not**
-been verified in a real Home Assistant dashboard. Do not rely on it.
+🚧 **Pre‑alpha.** It now renders in a real Home Assistant dashboard and ships a visual editor,
+but it is still pre‑release, has no tagged release, and may change without notice. Do not rely
+on it yet.
+
+## Configuration
+
+The card ships a **visual editor** — no YAML required. Open the card's edit dialog and pick your
+Clawdmeter **account**; every entity is filled in automatically (matched by the integration's
+translation keys, so it is language‑independent). You can also choose the **layout**
+(`panel` / `hero`), set an optional **title**, and toggle each element via checkboxes, grouped as:
+
+- **General** — title, creature, header line, background
+- **Bars** — session, week, time‑to‑limit, Sonnet, Opus, extra usage
+- **Values** — burn rate (5m / 30m), time to limit, limit ETA, buffer to reset, pace,
+  peak today, session reset‑in
+
+The "time‑to‑limit" bar tracks session usage toward the limit (severity‑coloured) and shows
+the projected ETA, mirroring the ESPHome Clawdmeter. The card follows your Home Assistant
+language (English and German included) and adapts to light/dark themes.
+
+### YAML (optional)
+
+```yaml
+type: custom:clawdmeter-card
+layout: panel # or: hero
+title: Clawdmeter # optional
+show: # optional per-element visibility
+  background: true
+  creature: true
+  sonnet: false
+# entity ids (session_usage, week_usage, time_to_limit, …) are filled by the editor
+```
 
 ## Installation
 

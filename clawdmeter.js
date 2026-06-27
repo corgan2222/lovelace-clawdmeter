@@ -500,58 +500,317 @@ const BANDS = ["#43A047", "#FFB300", "#E53935"]; // green / amber / red
 
 const STYLE = `
   :host { --clawd-salmon:#CE7D6B; }
-  ha-card { overflow:hidden; }
+  ha-card { overflow:hidden; container-type:inline-size; }
   canvas { width:100%; height:100%; display:block; image-rendering:pixelated; }
   .frame {
-    position:relative; border-radius:18px; background:#0F1320;
+    position:relative; border-radius:18px; background:#0F1320; padding:10px;
     border:0 solid transparent; box-sizing:border-box; aspect-ratio:1/1;
   }
   .frame.breathe { animation:clawd-breathe 1.4s ease-in-out infinite; }
   .frame.breathe.fast { animation-duration:.7s; }
   @keyframes clawd-breathe { 0%,100%{box-shadow:0 0 0 0 transparent;} 50%{box-shadow:0 0 22px 2px var(--pf,transparent);} }
-  .muted { color:#97A0B5; }
+  .muted { color:var(--secondary-text-color,#8b94a6); }
   .bar { height:14px; border-radius:8px; background:#2A3042; overflow:hidden; }
   .bar > i { display:block; height:100%; border-radius:8px; transition:width .6s ease; }
 
   /* panel layout */
-  .panel { display:grid; grid-template-columns:auto 1fr; gap:18px; padding:16px; align-items:center; }
+  .panel { display:grid; grid-template-columns:auto 1fr; gap:22px; padding:18px; align-items:center; }
   .panel .frame { width:148px; }
   .panel .title { font-weight:700; font-size:1.15rem; margin-bottom:8px; }
-  .panel .row { display:flex; justify-content:space-between; font-size:.92rem; margin:10px 0 5px; }
-  .panel .reset { font-size:.82rem; margin-top:4px; }
-  .panel .runway { margin-top:12px; font-weight:600; font-size:.9rem; }
 
   /* hero layout */
   .hero { position:relative; min-height:230px; display:grid; grid-template-columns:1fr auto;
-          gap:16px; padding:26px 28px; color:#F4F6FB;
-          background:linear-gradient(125deg,#0E1322 0%,#1A1031 100%); }
-  .hero::before { content:""; position:absolute; inset:0;
-    background:radial-gradient(420px 320px at 86% 55%, rgba(206,125,107,.34), transparent 70%),
-               radial-gradient(360px 300px at 8% 8%, rgba(90,58,140,.30), transparent 70%); }
-  .hero > * { position:relative; }
-  .kicker { color:#E89079; font-weight:700; font-size:.72rem; letter-spacing:.14em; }
-  .htitle { font-weight:800; font-size:2.7rem; line-height:1.05; margin:6px 0 2px; }
-  .hsub { color:#B9C0D0; font-size:1rem; }
-  .pills { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
-  .pill { display:inline-flex; align-items:center; gap:7px; padding:6px 13px; border-radius:999px;
-          background:rgba(255,255,255,.07); border:1px solid rgba(206,125,107,.5); font-size:.78rem; }
-  .pill > b { width:8px; height:8px; border-radius:50%; }
+          gap:16px; padding:26px 28px; }
+  .kicker { color:var(--primary-color,#E89079); font-weight:700; font-size:.72rem; letter-spacing:.14em; }
+  .htitle { font-weight:800; font-size:2.7rem; line-height:1.05; margin:6px 0 10px; }
   .hero-right { display:flex; flex-direction:column; align-items:center; justify-content:center; min-width:190px; }
   .hero .frame { width:150px; background:transparent; }
-  .hero-right .bar { width:170px; margin-top:10px; height:10px; }
-  .hmeta { display:flex; justify-content:space-between; width:170px; margin-top:6px; font-size:.78rem; }
+
+  /* dynamic metric modules (bars + stat grid + status chips) */
+  .info { min-width:0; }
+  .metrics { display:flex; flex-direction:column; }
+  .barwrap { margin:8px 0 2px; }
+  .barwrap .row { display:flex; justify-content:space-between; font-size:.9rem; margin:0 0 3px; }
+  .barwrap .row span:last-child { font-size:.9rem; font-weight:400; font-variant-numeric:tabular-nums; }
+  .sub { display:flex; justify-content:space-between; gap:8px; font-size:.78rem; margin-top:3px; white-space:nowrap; }
+  .sub > span:first-child { overflow:hidden; text-overflow:ellipsis; min-width:0; }
+  .sub > span:last-child { flex:none; }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:8px 16px; margin-top:14px; }
+  .stat { display:flex; flex-direction:column; min-width:0; }
+  .stat .k { font-size:.72rem; }
+  .stat .v { font-weight:700; font-size:.98rem; white-space:nowrap; }
+  .chips { display:flex; flex-wrap:wrap; gap:7px; margin-top:12px; }
+  .chip { display:inline-flex; align-items:center; gap:6px; padding:4px 11px; border-radius:999px;
+          background:rgba(255,255,255,.06); border:1px solid #2A3042; font-size:.74rem; }
+  .chip > b { width:8px; height:8px; border-radius:50%; }
+  .hero .stats { max-width:280px; }
+  .hero-right .barwrap { width:170px; margin-top:10px; }
+
+  /* decorative gradient background (toggleable, both layouts). When off, the
+     card falls back to the themed ha-card background + text, so it works in
+     light mode too. */
+  .bg { position:relative; color:#F4F6FB;
+        background:linear-gradient(125deg,#0E1322 0%,#1A1031 100%); }
+  .bg::before { content:""; position:absolute; inset:0;
+    background:radial-gradient(420px 320px at 86% 55%, rgba(206,125,107,.34), transparent 70%),
+               radial-gradient(360px 300px at 8% 8%, rgba(90,58,140,.30), transparent 70%); }
+  .bg > * { position:relative; }
+  .bg .muted { color:#B9C0D0; }
+  .bg .kicker { color:#E89079; }
+  .panel.nocreature { grid-template-columns:1fr; }
+  @container (max-width: 360px) {
+    .panel { grid-template-columns:1fr; }
+    .panel .frame { justify-self:center; width:132px; }
+    .hero { grid-template-columns:1fr; }
+    .hero-right { min-width:0; align-items:stretch; }
+    .hero-right .bar, .hero-right .barwrap { width:auto; }
+    .stats { grid-template-columns:1fr; }
+  }
+`;
+
+function langOf(hass) {
+  const l =
+    (hass && ((hass.locale && hass.locale.language) || hass.language)) || "en";
+  return String(l).split("-")[0].toLowerCase();
+}
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        c
+      ],
+  );
+}
+
+// All entities the integration creates for one account, keyed by translation
+// key — this is the language-independent handle used to auto-fill the card.
+function clawdEntities(hass) {
+  const out = [];
+  const e = (hass && hass.entities) || {};
+  for (const id in e)
+    if (e[id] && e[id].platform === "clawdmeter") out.push(e[id]);
+  return out;
+}
+
+function clawdDevices(hass) {
+  const map = {};
+  for (const e of clawdEntities(hass)) {
+    const d = e.device_id || "_none";
+    if (!map[d]) map[d] = { id: d, name: "", keys: {} };
+    if (e.translation_key) map[d].keys[e.translation_key] = e.entity_id;
+  }
+  const dv = (hass && hass.devices) || {};
+  for (const d in map) {
+    const dev = dv[d];
+    map[d].name = (dev && (dev.name_by_user || dev.name)) || "Clawdmeter";
+  }
+  return map;
+}
+
+// Toggleable display modules. `on` is the default visibility; the editor's
+// checkboxes override it per card via config.show[id]. `usage`/`reset`/`entity`
+// are translation keys resolved to entity ids by the editor / getStubConfig.
+const ELEMENTS = [
+  {
+    id: "session",
+    kind: "bar",
+    usage: "session_usage",
+    reset: "session_reset",
+    on: true,
+  },
+  {
+    id: "week",
+    kind: "bar",
+    usage: "week_usage",
+    reset: "week_reset",
+    on: true,
+  },
+  { id: "runwaybar", kind: "runway", on: true },
+  {
+    id: "sonnet",
+    kind: "bar",
+    usage: "sonnet_usage",
+    reset: "sonnet_reset",
+    on: false,
+  },
+  {
+    id: "opus",
+    kind: "bar",
+    usage: "opus_usage",
+    reset: "opus_reset",
+    on: false,
+  },
+  { id: "extra", kind: "bar", usage: "extra_usage", on: false },
+  { id: "burn", kind: "stat", entity: "burn_rate_5m", on: true },
+  { id: "burn30", kind: "stat", entity: "burn_rate_30m", on: false },
+  { id: "ttl", kind: "stat", entity: "time_to_limit", on: false },
+  { id: "eta", kind: "stat", entity: "limit_eta", on: false },
+  { id: "runway", kind: "stat", entity: "runway_margin", on: false },
+  { id: "pace", kind: "stat", entity: "runway_pace", on: false },
+  { id: "peak", kind: "stat", entity: "session_peak_today", on: false },
+  { id: "resetin", kind: "stat", entity: "session_reset_in", on: false },
+];
+
+// Chrome (structural) toggles — also stored in config.show, default on.
+// `hero` marks toggles that only affect the hero layout.
+const CHROME = [
+  { id: "title" },
+  { id: "creature" },
+  { id: "kicker", hero: true },
+  { id: "background", hero: true },
+];
+
+// Inline language files. A single-file Lovelace card bundles its translations
+// (no build/fetch); add a block here to localise the card. Picked from the
+// user's Home Assistant language via langOf().
+const LANG = {
+  en: {
+    kicker: "HOME ASSISTANT × CLAUDE",
+    resetting: "resetting…",
+    reset_in: "resets in {t}",
+    in_: "in {t}",
+    ago: "{t} ago",
+    chip_extra: "Extra usage on",
+    chip_over: "Limit before reset",
+    dur_h: "h",
+    dur_m: "m",
+    dur_d: "d",
+    dur_zero: "0m",
+    sev: { warning: "Extra usage: warning", critical: "Extra usage: critical" },
+    el: {
+      session: "Session",
+      week: "Week",
+      sonnet: "Sonnet (weekly)",
+      opus: "Opus (weekly)",
+      extra: "Extra usage",
+      burn: "Burn rate 5m",
+      burn30: "Burn rate 30m",
+      ttl: "Time to limit",
+      eta: "Limit ETA",
+      runway: "Buffer to reset",
+      runwaybar: "Time to limit",
+      pace: "Pace",
+      peak: "Peak today",
+      resetin: "Session resets in",
+    },
+    runway_ok: "Lasts until reset",
+    runway_short: "Limit {t} before reset",
+    ch: {
+      title: "Title",
+      creature: "Creature",
+      kicker: "Header line",
+      background: "Background",
+    },
+    ed_account: "Clawdmeter account",
+    ed_auto: "Entities are filled in automatically for the selected account.",
+    ed_nodev: "No Clawdmeter account found — add the integration first.",
+    ed_layout: "Layout",
+    ed_panel: "Panel",
+    ed_hero: "Hero",
+    ed_title: "Title (optional)",
+    ed_display: "General",
+    ed_bars: "Bars",
+    ed_values: "Values",
+  },
+  de: {
+    kicker: "HOME ASSISTANT × CLAUDE",
+    resetting: "wird zurückgesetzt…",
+    reset_in: "Reset in {t}",
+    in_: "in {t}",
+    ago: "vor {t}",
+    chip_extra: "Zusatznutzung aktiv",
+    chip_over: "Limit vor Reset",
+    dur_h: "h",
+    dur_m: " min",
+    dur_d: "d",
+    dur_zero: "0 min",
+    sev: {
+      warning: "Zusatznutzung: Warnung",
+      critical: "Zusatznutzung: kritisch",
+    },
+    el: {
+      session: "Sitzung",
+      week: "Woche",
+      sonnet: "Sonnet (Woche)",
+      opus: "Opus (Woche)",
+      extra: "Zusatznutzung",
+      burn: "Verbrauchsrate 5m",
+      burn30: "Verbrauchsrate 30m",
+      ttl: "Zeit bis zum Limit",
+      eta: "Limit erreicht um",
+      runway: "Puffer bis Reset",
+      runwaybar: "Zeit bis zum Limit",
+      pace: "Tempo",
+      peak: "Tageshoch",
+      resetin: "Sitzungs-Reset in",
+    },
+    runway_ok: "Reicht bis zum Reset",
+    runway_short: "Limit {t} vor Reset",
+    ch: {
+      title: "Titel",
+      creature: "Kreatur",
+      kicker: "Kopfzeile",
+      background: "Hintergrund",
+    },
+    ed_account: "Clawdmeter-Konto",
+    ed_auto: "Die Entitäten werden für das gewählte Konto automatisch gesetzt.",
+    ed_nodev:
+      "Kein Clawdmeter-Konto gefunden — bitte zuerst die Integration einrichten.",
+    ed_layout: "Layout",
+    ed_panel: "Panel",
+    ed_hero: "Hero",
+    ed_title: "Titel (optional)",
+    ed_display: "Allgemein",
+    ed_bars: "Balken",
+    ed_values: "Werte",
+  },
+};
+
+const EDITOR_STYLE = `
+  .ed { display:flex; flex-direction:column; gap:6px; padding:4px 2px; }
+  .ed .lbl { font-weight:600; font-size:.82rem; margin-top:8px; }
+  .ed select, .ed input[type=text] {
+    padding:8px 10px; border-radius:8px; border:1px solid var(--divider-color,#444);
+    background:var(--card-background-color,#1c1c1c); color:var(--primary-text-color,#eee); font-size:.95rem;
+  }
+  .ed .hint { font-size:.76rem; color:var(--secondary-text-color,#9aa); margin-top:2px; }
+  .ed .checks { display:grid; grid-template-columns:1fr 1fr; gap:4px 12px; margin-top:4px; }
+  .ed .chk { display:flex; align-items:center; gap:8px; font-size:.9rem; cursor:pointer; }
 `;
 
 class ClawdmeterCard extends HTMLElement {
   setConfig(config) {
+    const prev = this._config;
     this._config = Object.assign({ layout: "panel" }, config || {});
-    this._built = false;
-    this._rot = -1;
-    this._anim = null;
-    this._group = "idle";
-    this._frame = 0;
-    this._t0 = 0;
+    if (typeof this._config.show !== "object" || this._config.show === null)
+      this._config.show = {};
+    // Animation state is hass-driven (animation_group), not config-driven —
+    // initialise it once so config edits never restart the creature.
+    if (this._rot === undefined) {
+      this._rot = -1;
+      this._anim = null;
+      this._group = "idle";
+      this._frame = 0;
+      this._t0 = 0;
+    }
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+    // Only rebuild the DOM when the visible skeleton can change; a title-only
+    // edit (per-keystroke in the editor) just refreshes via _update().
+    const structural =
+      !this._built ||
+      !prev ||
+      prev.layout !== this._config.layout ||
+      JSON.stringify(prev.show) !== JSON.stringify(this._config.show) ||
+      ELEMENTS.some((e) => {
+        const k = e.kind === "bar" ? e.usage : e.entity;
+        return prev[k] !== this._config[k];
+      });
+    if (this._hass) {
+      if (structural) this._build();
+      this._update();
+    }
   }
 
   set hass(hass) {
@@ -594,14 +853,52 @@ class ClawdmeterCard extends HTMLElement {
     return dev ? dev.replace(/\s+\S+$/, "") : "Clawdmeter";
   }
 
-  _fmtReset() {
-    const raw = this._st("session_reset");
-    if (!raw) return "";
+  _t() {
+    return LANG[langOf(this._hass)] || LANG.en;
+  }
+
+  _dur(min) {
+    const T = this._t();
+    const m = Math.round(Math.abs(min));
+    if (!Number.isFinite(m) || m <= 0) return T.dur_zero;
+    const d = Math.floor(m / 1440);
+    const h = Math.floor((m % 1440) / 60);
+    if (d) return `${d}${T.dur_d} ${h}${T.dur_h}`;
+    return h ? `${h}${T.dur_h} ${m % 60}${T.dur_m}` : `${m}${T.dur_m}`;
+  }
+
+  _rel(iso) {
+    const T = this._t();
+    const mins = Math.round((new Date(iso).getTime() - Date.now()) / 60000);
+    if (!Number.isFinite(mins)) return "–";
+    return (mins < 0 ? T.ago : T.in_).replace("{t}", this._dur(mins));
+  }
+
+  _fmtReset(key) {
+    const raw = this._st(key);
+    if (!raw || raw === "unknown" || raw === "unavailable") return "";
+    const T = this._t();
     const mins = Math.round((new Date(raw).getTime() - Date.now()) / 60000);
-    if (!Number.isFinite(mins) || mins <= 0) return "resetting…";
-    const h = Math.floor(mins / 60);
-    const m = mins % 60;
-    return "resets in " + (h ? `${h}h ${m}m` : `${m}m`);
+    if (!Number.isFinite(mins)) return "";
+    if (mins <= 0) return T.resetting;
+    return T.reset_in.replace("{t}", this._dur(mins));
+  }
+
+  _fmtStat(el) {
+    const id = this._config[el.entity];
+    const s = id && this._hass && this._hass.states[id];
+    if (!s || s.state === "unknown" || s.state === "unavailable") return "–";
+    const a = s.attributes || {};
+    if (a.device_class === "timestamp") return this._clock(s.state);
+    const u = a.unit_of_measurement;
+    const v = parseFloat(s.state);
+    if (u === "min") return (v < 0 ? "−" : "") + this._dur(v);
+    if (Number.isFinite(v)) {
+      const dec = u === "%/min" ? 2 : u && u !== "%" ? 1 : 0;
+      const n = dec ? v.toFixed(dec) : String(Math.round(v));
+      return u && u !== "%" ? `${n} ${u}` : `${n}${u || ""}`;
+    }
+    return u ? `${s.state} ${u}` : s.state;
   }
 
   _band(pct) {
@@ -609,52 +906,112 @@ class ClawdmeterCard extends HTMLElement {
     return pct >= 80 ? BANDS[2] : pct >= 50 ? BANDS[1] : BANDS[0];
   }
 
-  _runwayText() {
-    const m = this._num("runway_margin");
-    if (m == null) return "";
-    return m >= 0
-      ? `Runway: ${Math.round(m)}m to spare`
-      : `Runway: hits limit ${Math.round(-m)}m early`;
+  // ---- DOM ----
+  _has(el) {
+    if (el.kind === "bar") return !!this._config[el.usage];
+    if (el.kind === "runway") return !!this._config.session_usage;
+    return !!this._config[el.entity];
   }
 
-  // ---- DOM ----
+  _visibleEls() {
+    const show = this._config.show || {};
+    return ELEMENTS.filter((el) => {
+      const on = show[el.id] !== undefined ? !!show[el.id] : el.on;
+      return on && this._has(el);
+    });
+  }
+
+  _barSkeleton(el, T) {
+    return `<div class="barwrap">
+        <div class="row"><span class="muted">${esc(T.el[el.id] || el.id)}</span><span id="pct_${el.id}">–</span></div>
+        <div class="bar"><i id="bar_${el.id}"></i></div>
+        ${el.reset ? `<div class="sub muted"><span id="sub_${el.id}"></span><span id="subr_${el.id}"></span></div>` : ""}
+      </div>`;
+  }
+
+  _runwaySkeleton(el, T) {
+    return `<div class="barwrap">
+        <div class="row"><span class="muted">${esc(T.el.runwaybar)}</span><span id="rwv_${el.id}">–</span></div>
+        <div class="bar"><i id="bar_${el.id}"></i></div>
+        <div class="sub muted"><span id="sub_${el.id}"></span><span id="subr_${el.id}"></span></div>
+      </div>`;
+  }
+
+  _chrome(id) {
+    const show = this._config.show || {};
+    return show[id] !== undefined ? !!show[id] : true;
+  }
+
+  _clock(raw) {
+    if (!raw || raw === "unknown" || raw === "unavailable") return "";
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return "";
+    const lang = langOf(this._hass);
+    const time = d.toLocaleTimeString(lang, {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) return time;
+    return `${d.toLocaleDateString(lang, { weekday: "short" })} ${time}`;
+  }
+
+  _fmtClock(key) {
+    return this._clock(this._st(key));
+  }
+
+  _statSkeleton(el, T) {
+    return `<div class="stat"><span class="k muted">${esc(T.el[el.id] || el.id)}</span><span class="v" id="stat_${el.id}">–</span></div>`;
+  }
+
   _build() {
+    const T = this._t();
     const hero = this._config.layout === "hero";
+    const vis = this._visibleEls();
+    this._vis = vis;
+    const bars = vis.filter((e) => e.kind === "bar" || e.kind === "runway");
+    const stats = vis.filter((e) => e.kind === "stat");
+    const barsHTML = bars
+      .map((e) =>
+        e.kind === "runway"
+          ? this._runwaySkeleton(e, T)
+          : this._barSkeleton(e, T),
+      )
+      .join("");
+    const statsHTML = stats.length
+      ? `<div class="stats">${stats.map((e) => this._statSkeleton(e, T)).join("")}</div>`
+      : "";
+    const canvas = this._chrome("creature")
+      ? `<div class="frame" id="frame"><canvas id="cv" width="240" height="240"></canvas></div>`
+      : "";
+    const title = this._chrome("title");
     const root = document.createElement("ha-card");
     const body = hero
-      ? `<div class="hero">
+      ? `<div class="hero${this._chrome("background") ? " bg" : ""}">
            <div>
-             <div class="kicker">HOME ASSISTANT × CLAUDE</div>
-             <div class="htitle" id="title">Clawdmeter</div>
-             <div class="hsub" id="sub">Watch your Claude usage burn — live.</div>
-             <div class="pills">
-               <span class="pill"><b style="background:#E89079"></b>Burn rate</span>
-               <span class="pill"><b style="background:#FFB300"></b>Time-to-limit</span>
-               <span class="pill"><b style="background:#43A047"></b>Runway</span>
-             </div>
+             ${this._chrome("kicker") ? `<div class="kicker">${esc(T.kicker)}</div>` : ""}
+             ${title ? `<div class="htitle" id="title">Clawdmeter</div>` : ""}
+             <div class="chips" id="chips"></div>
+             ${statsHTML}
            </div>
            <div class="hero-right">
-             <div class="frame" id="frame"><canvas id="cv" width="240" height="240"></canvas></div>
-             <div class="bar"><i id="sbar"></i></div>
-             <div class="hmeta"><span id="spct">–</span><span id="sreset" class="muted"></span></div>
+             ${canvas}
+             ${barsHTML}
            </div>
          </div>`
-      : `<div class="panel">
-           <div class="frame" id="frame"><canvas id="cv" width="240" height="240"></canvas></div>
+      : `<div class="panel${this._chrome("background") ? " bg" : ""}${this._chrome("creature") ? "" : " nocreature"}">
+           ${canvas}
            <div class="info">
-             <div class="title" id="title">Clawdmeter</div>
-             <div class="row"><span class="muted">Session</span><span id="spct">–</span></div>
-             <div class="bar"><i id="sbar"></i></div>
-             <div class="reset muted" id="sreset"></div>
-             <div class="row"><span class="muted">Week</span><span id="wpct">–</span></div>
-             <div class="bar"><i id="wbar"></i></div>
-             <div class="runway" id="runway"></div>
+             ${title ? `<div class="title" id="title">Clawdmeter</div>` : ""}
+             <div class="metrics">${barsHTML}</div>
+             ${statsHTML}
+             <div class="chips" id="chips"></div>
            </div>
          </div>`;
     root.innerHTML = `<style>${STYLE}</style>${body}`;
     this.shadowRoot.replaceChildren(root);
     this._cv = this.shadowRoot.getElementById("cv");
-    this._ctx = this._cv.getContext("2d");
+    this._ctx = this._cv ? this._cv.getContext("2d") : null;
     this._frameEl = this.shadowRoot.getElementById("frame");
     this._built = true;
     this._drawFrame();
@@ -666,34 +1023,80 @@ class ClawdmeterCard extends HTMLElement {
 
   _update() {
     if (!this._built) return;
-    const set = (id, v) => {
-      const el = this.$(id);
-      if (el) el.textContent = v;
-    };
-    const su = this._num("session_usage");
-    set("title", this._title());
-    set("spct", su == null ? "–" : `${Math.round(su)}%`);
-    set("sreset", this._fmtReset());
-    const sbar = this.$("sbar");
-    if (sbar) {
-      sbar.style.width = `${Math.max(su || 0, 3)}%`;
-      sbar.style.background = this._band(su);
-    }
-    if (this._config.layout !== "hero") {
-      const wu = this._num("week_usage");
-      set("wpct", wu == null ? "–" : `${Math.round(wu)}%`);
-      const wbar = this.$("wbar");
-      if (wbar) {
-        wbar.style.width = `${Math.max(wu || 0, 3)}%`;
-        wbar.style.background = this._band(wu);
+    const t = this.$("title");
+    if (t) t.textContent = this._title();
+    for (const el of this._vis || []) {
+      if (el.kind === "bar") {
+        const v = this._num(el.usage);
+        const pct = this.$("pct_" + el.id);
+        if (pct) pct.textContent = v == null ? "–" : `${Math.round(v)}%`;
+        const bar = this.$("bar_" + el.id);
+        if (bar) {
+          bar.style.width = `${Math.max(v || 0, 3)}%`;
+          bar.style.background = this._band(v);
+        }
+        if (el.reset) {
+          const sub = this.$("sub_" + el.id);
+          if (sub) sub.textContent = this._fmtReset(el.reset);
+          const subr = this.$("subr_" + el.id);
+          if (subr) subr.textContent = this._fmtClock(el.reset);
+        }
+      } else if (el.kind === "runway") {
+        this._updateRunway(el);
+      } else {
+        const st = this.$("stat_" + el.id);
+        if (st) st.textContent = this._fmtStat(el);
       }
-      set("runway", this._runwayText());
-      const rw = this.$("runway");
-      const m = this._num("runway_margin");
-      if (rw)
-        rw.style.color = m == null ? "#97A0B5" : m >= 0 ? BANDS[0] : BANDS[2];
     }
+    this._renderChips();
     this._applyFrameColor();
+  }
+
+  // The runway bar visualises whether the time to the limit covers the time to
+  // the session reset: full + green = you reach the reset before the limit.
+  _updateRunway(el) {
+    const T = this._t();
+    const ttl = this._num("time_to_limit"); // minutes until the limit
+    const margin = this._num("runway_margin"); // ttl - time-to-reset, to spare
+    const usage = this._num("session_usage"); // the bar tracks usage toward 100%
+    const vEl = this.$("rwv_" + el.id);
+    if (vEl) vEl.textContent = ttl == null ? "–" : this._dur(ttl);
+    const bar = this.$("bar_" + el.id);
+    if (bar) {
+      // Mirrors the device's "time till 100%": the bar tracks session usage
+      // toward the limit (severity-coloured); value + sub say WHEN it is hit.
+      bar.style.width = `${Math.max(usage || 0, 3)}%`;
+      bar.style.background = this._band(usage);
+    }
+    const safe = margin == null ? null : margin >= 0;
+    const sub = this.$("sub_" + el.id);
+    if (sub)
+      sub.textContent =
+        safe == null
+          ? ""
+          : safe
+            ? T.runway_ok
+            : T.runway_short.replace("{t}", this._dur(margin));
+    const subr = this.$("subr_" + el.id);
+    if (subr) subr.textContent = this._fmtClock("limit_eta");
+  }
+
+  _renderChips() {
+    const box = this.$("chips");
+    if (!box) return;
+    const T = this._t();
+    const out = [];
+    if (this._st("extra_enabled") === "on") out.push(["#43A047", T.chip_extra]);
+    if (this._st("runway_over") === "on") out.push(["#E53935", T.chip_over]);
+    const sev = this._st("extra_severity");
+    if (sev && sev !== "normal" && T.sev[sev])
+      out.push([sev === "critical" ? "#E53935" : "#FFB300", T.sev[sev]]);
+    box.innerHTML = out
+      .map(
+        ([c, txt]) =>
+          `<span class="chip"><b style="background:${c}"></b>${esc(txt)}</span>`,
+      )
+      .join("");
   }
 
   _applyFrameColor() {
@@ -772,28 +1175,216 @@ class ClawdmeterCard extends HTMLElement {
     }
   }
 
-  static getStubConfig() {
-    return {
-      type: "custom:clawdmeter-card",
-      layout: "panel",
-      session_usage: "sensor.claude_session_usage",
-      session_reset: "sensor.claude_session_reset",
-      week_usage: "sensor.claude_weekly_usage",
-      animation_group: "sensor.claude_animation_group",
-      pace_frame: "sensor.claude_pace_frame",
-      runway_margin: "sensor.claude_runway_margin",
-    };
+  static getConfigElement() {
+    return document.createElement("clawdmeter-card-editor");
+  }
+
+  static getStubConfig(hass) {
+    const base = { layout: "panel" };
+    const devs = hass ? clawdDevices(hass) : {};
+    const ids = Object.keys(devs);
+    if (ids.length) {
+      base.device = ids[0];
+      Object.assign(base, devs[ids[0]].keys);
+    }
+    return base;
   }
 }
 
 customElements.define("clawdmeter-card", ClawdmeterCard);
+
+class ClawdmeterCardEditor extends HTMLElement {
+  setConfig(config) {
+    this._config = Object.assign({}, config);
+    this._maybeRender();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._maybeRender();
+  }
+
+  _t() {
+    return LANG[langOf(this._hass)] || LANG.en;
+  }
+
+  _maybeRender() {
+    if (!this._hass || !this._config) return;
+    if (!this._rendered) {
+      this._render();
+      this._rendered = true;
+    } else {
+      this._syncFields();
+    }
+  }
+
+  _selectedDevice(devs, ids) {
+    if (this._config.device && devs[this._config.device])
+      return this._config.device;
+    const su = this._config.session_usage;
+    if (su)
+      for (const id of ids) if (devs[id].keys.session_usage === su) return id;
+    return ids[0] || "";
+  }
+
+  // HA caches the editor element and re-calls setConfig (per keystroke, on the
+  // YAML↔visual toggle, on external edits). Sync the controls to the new config
+  // without rebuilding, and never touch the field the user is editing.
+  _syncFields() {
+    const root = this.shadowRoot;
+    if (!root) return;
+    const active = root.activeElement;
+    const devs = clawdDevices(this._hass);
+    const ids = Object.keys(devs);
+    const dev = root.getElementById("dev");
+    if (dev && dev !== active) dev.value = this._selectedDevice(devs, ids);
+    const layout = root.getElementById("layout");
+    if (layout && layout !== active)
+      layout.value = this._config.layout === "hero" ? "hero" : "panel";
+    const title = root.getElementById("title");
+    if (title && title !== active) title.value = this._config.title || "";
+    root.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+      if (cb === active) return;
+      cb.checked = this._isChecked(cb.dataset.el);
+    });
+  }
+
+  _isChecked(id) {
+    const show = this._config.show || {};
+    if (show[id] !== undefined) return !!show[id];
+    const el = ELEMENTS.find((e) => e.id === id);
+    return el ? el.on : true;
+  }
+
+  _render() {
+    if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+    const T = this._t();
+    const devs = clawdDevices(this._hass);
+    const ids = Object.keys(devs);
+    const sel = this._selectedDevice(devs, ids);
+    const layout = this._config.layout === "hero" ? "hero" : "panel";
+    const opts = ids.length
+      ? ids
+          .map(
+            (id) =>
+              `<option value="${esc(id)}" ${id === sel ? "selected" : ""}>${esc(devs[id].name)}</option>`,
+          )
+          .join("")
+      : `<option value="">${esc(T.ed_nodev)}</option>`;
+    const mkCheck = (id, label) =>
+      `<label class="chk"><input type="checkbox" data-el="${id}" ${this._isChecked(id) ? "checked" : ""}><span>${esc(label)}</span></label>`;
+    const chromeChecks = CHROME.map((c) => mkCheck(c.id, T.ch[c.id])).join("");
+    const barChecks = ELEMENTS.filter(
+      (e) => e.kind === "bar" || e.kind === "runway",
+    )
+      .map((el) => mkCheck(el.id, T.el[el.id]))
+      .join("");
+    const valChecks = ELEMENTS.filter((e) => e.kind === "stat")
+      .map((el) => mkCheck(el.id, T.el[el.id]))
+      .join("");
+    this.shadowRoot.innerHTML = `<style>${EDITOR_STYLE}</style>
+      <div class="ed">
+        <label class="lbl">${esc(T.ed_account)}</label>
+        <select id="dev">${opts}</select>
+        <div class="hint">${esc(T.ed_auto)}</div>
+        <label class="lbl">${esc(T.ed_layout)}</label>
+        <select id="layout">
+          <option value="panel" ${layout === "panel" ? "selected" : ""}>${esc(T.ed_panel)}</option>
+          <option value="hero" ${layout === "hero" ? "selected" : ""}>${esc(T.ed_hero)}</option>
+        </select>
+        <label class="lbl">${esc(T.ed_title)}</label>
+        <input id="title" type="text" value="${esc(this._config.title || "")}">
+        <label class="lbl">${esc(T.ed_display)}</label>
+        <div class="checks">${chromeChecks}</div>
+        <label class="lbl">${esc(T.ed_bars)}</label>
+        <div class="checks">${barChecks}</div>
+        <label class="lbl">${esc(T.ed_values)}</label>
+        <div class="checks">${valChecks}</div>
+      </div>`;
+
+    this.shadowRoot
+      .getElementById("dev")
+      .addEventListener("change", (e) => this._onDevice(e.target.value));
+    this.shadowRoot.getElementById("layout").addEventListener("change", (e) => {
+      this._config = { ...this._config, layout: e.target.value };
+      this._emit();
+    });
+    this.shadowRoot.getElementById("title").addEventListener("input", (e) => {
+      const v = e.target.value;
+      this._config = { ...this._config };
+      if (v) this._config.title = v;
+      else delete this._config.title;
+      this._emit();
+    });
+    this.shadowRoot.querySelectorAll('input[type="checkbox"]').forEach((cb) =>
+      cb.addEventListener("change", (e) => {
+        const show = { ...(this._config.show || {}) };
+        show[e.target.dataset.el] = e.target.checked;
+        this._config = { ...this._config, show };
+        this._emit();
+      }),
+    );
+
+    // First open: ensure the selected account's entities are all present,
+    // healing configs that predate newly-added sensors (otherwise those
+    // modules render nothing).
+    if (sel) this._healConfig(sel);
+  }
+
+  _onDevice(id) {
+    const devs = clawdDevices(this._hass);
+    const keys = (devs[id] && devs[id].keys) || {};
+    const next = { ...this._config, device: id };
+    // Drop every clawdmeter key first so a leaner account can't inherit the
+    // previous account's entity ids (cross-account leak).
+    for (const d in devs) for (const tk in devs[d].keys) delete next[tk];
+    for (const tk in keys) next[tk] = keys[tk];
+    this._config = next;
+    this._emit();
+  }
+
+  _healConfig(id) {
+    const devs = clawdDevices(this._hass);
+    const keys = (devs[id] && devs[id].keys) || {};
+    const next = { ...this._config };
+    let changed = false;
+    if (next.device !== id) {
+      next.device = id;
+      changed = true;
+    }
+    for (const tk in keys) {
+      if (next[tk] !== keys[tk]) {
+        next[tk] = keys[tk];
+        changed = true;
+      }
+    }
+    if (changed) {
+      this._config = next;
+      this._emit();
+    }
+  }
+
+  _emit() {
+    this.dispatchEvent(
+      new CustomEvent("config-changed", {
+        detail: { config: this._config },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+}
+
+customElements.define("clawdmeter-card-editor", ClawdmeterCardEditor);
+
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "clawdmeter-card",
   name: "Clawdmeter Card",
-  description: "Animated Claude-usage creature with live burn rate and runway.",
+  description:
+    "Animated Claude-usage creature with live burn rate, runway and usage bars.",
   preview: true,
-  documentationURL: "https://github.com/HermannBjorgvin/Clawdmeter",
+  documentationURL: "https://github.com/corgan2222/lovelace-clawdmeter",
 });
 console.info(
   "%c CLAWDMETER-CARD ",
