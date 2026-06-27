@@ -1,0 +1,26 @@
+name: Release
+
+# Attaches the card file to a published GitHub release so HACS installs exactly
+# that asset. HACS reads the *version* from the release tag itself — plugins have
+# no version field in hacs.json — so cutting a release (e.g. from the Release
+# Drafter draft) is all that is needed to publish a new version.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Attach card to release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Attach clawdmeter.js to the release
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        with:
+          files: clawdmeter.js
