@@ -1,26 +1,19 @@
 # Clawdmeter Card
 
-> ## ⚠️ WORK IN PROGRESS — NOT TESTED, NOT FOR USERS YET
->
-> **This card has not been tested and is _not_ ready to install or even to try out.**
-> It is published here only so development can happen in the open. Do **not** add it to
-> Home Assistant yet: it may not render, it may break, and it will change without notice.
-> There is intentionally **no release** — treat everything here as unfinished.
-
-![Clawdmeter card — design mockup, not a live screenshot](images/card_preview.png)
+![Clawdmeter card](images/card_preview.png)
 
 An animated Lovelace card for the
 [Clawdmeter](https://github.com/corgan2222/ha-clawdmeter) integration. It is meant to show
 Claude usage (session / weekly limits, burn rate, runway, time‑to‑limit) as an animated
 pixel‑art creature, mirroring the ESPHome Clawdmeter display.
 
-The custom element is `clawdmeter-card` (so eventually: `type: custom:clawdmeter-card`).
+The custom element is `clawdmeter-card` (use `type: custom:clawdmeter-card`).
 
 ## Status
 
-🚧 **Pre‑alpha.** It now renders in a real Home Assistant dashboard and ships a visual editor,
-but it is still pre‑release, has no tagged release, and may change without notice. Do not rely
-on it yet.
+🧪 **Early release (`v0.0.1`), experimental.** The card renders in a real Home Assistant
+dashboard and ships a visual editor. It is usable, but young — expect rough edges and changes
+between versions. Bug reports and ideas are welcome via the issue templates.
 
 ## Configuration
 
@@ -53,8 +46,21 @@ show: # optional per-element visibility
 
 ## Installation
 
-Not available yet. Once the card is actually tested and released, installation instructions
-(HACS custom repository + dashboard resource) will be added here.
+### HACS (recommended)
+
+1. In HACS, open the menu (⋮) → **Custom repositories**.
+2. Add `https://github.com/corgan2222/lovelace-clawdmeter` with category **Dashboard**.
+3. Search for **Clawdmeter Card**, install it, then reload your browser.
+4. Add the card to a dashboard — the visual editor fills in your Clawdmeter account automatically.
+
+You also need the [Clawdmeter integration](https://github.com/corgan2222/ha-clawdmeter) for the
+underlying sensors.
+
+### Manual
+
+Copy `clawdmeter.js` to `config/www/` and add it as a dashboard resource
+(`/local/clawdmeter.js`, type _JavaScript Module_), or load it via `lovelace.resources` /
+`frontend.extra_module_url`.
 
 ## License
 
