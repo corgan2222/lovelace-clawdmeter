@@ -1,0 +1,11 @@
+---
+blank_issues_enabled: false
+contact_links:
+  - name: "Clawdmeter integration (data / backend)"
+    url: https://github.com/corgan2222/ha-clawdmeter/issues
+    about: >-
+      Wrong values, missing sensors, or login/usage-data problems come from the
+      integration — please report those there, not on the card.
+  - name: "Home Assistant Community"
+    url: https://community.home-assistant.io/
+    about: "General Home Assistant and dashboard questions."
