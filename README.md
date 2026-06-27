@@ -15,6 +15,18 @@ The custom element is `clawdmeter-card` (use `type: custom:clawdmeter-card`).
 dashboard and ships a visual editor. It is usable, but young — expect rough edges and changes
 between versions. Bug reports and ideas are welcome via the issue templates.
 
+## Layouts
+
+Two layouts, switchable in the editor.
+
+### Panel
+
+![Clawdmeter card — panel layout](images/card_preview_panel.png)
+
+### Hero
+
+![Clawdmeter card — hero layout](images/hero_small.png)
+
 ## Configuration
 
 The card ships a **visual editor** — no YAML required. Open the card's edit dialog and pick your
@@ -30,6 +42,16 @@ translation keys, so it is language‑independent). You can also choose the **la
 The "time‑to‑limit" bar tracks session usage toward the limit (severity‑coloured) and shows
 the projected ETA, mirroring the ESPHome Clawdmeter. The card follows your Home Assistant
 language (English and German included) and adapts to light/dark themes.
+
+The visual editor (panel and hero):
+
+<img src="images/editor_panel.png" alt="Visual editor — panel layout" width="700">
+
+<img src="images/editor_hero.png" alt="Visual editor — hero layout" width="700">
+
+With the **background** turned off, the card uses your theme's card background, so it fits a light theme too:
+
+![Hero layout with the background turned off](images/hero_small_no_bg.png)
 
 ### YAML (optional)
 
@@ -61,6 +83,13 @@ underlying sensors.
 Copy `clawdmeter.js` to `config/www/` and add it as a dashboard resource
 (`/local/clawdmeter.js`, type _JavaScript Module_), or load it via `lovelace.resources` /
 `frontend.extra_module_url`.
+
+## Credits
+
+- [HermannBjorgvin/Clawdmeter](https://github.com/HermannBjorgvin/Clawdmeter) — the original creature and concept.
+- [trickv/hass-claude-usage](https://github.com/trickv/hass-claude-usage) — the reference integration this build reworks.
+- [esphome-modular-lvgl-buttons](https://github.com/corgan2222/esphome-modular-lvgl-buttons) — the ESPHome Clawdmeter display.
+- [claudepix.vercel.app](https://claudepix.vercel.app/) — the pixel-art creature animations.
 
 ## License
 
