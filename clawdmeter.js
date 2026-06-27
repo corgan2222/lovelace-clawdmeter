@@ -660,6 +660,7 @@ const CHROME = [
   { id: "creature" },
   { id: "kicker", hero: true },
   { id: "background", hero: true },
+  { id: "chips" },
 ];
 
 // Inline language files. A single-file Lovelace card bundles its translations
@@ -702,6 +703,7 @@ const LANG = {
       creature: "Creature",
       kicker: "Header line",
       background: "Background",
+      chips: "Status chips",
     },
     ed_account: "Clawdmeter account",
     ed_auto: "Entities are filled in automatically for the selected account.",
@@ -753,6 +755,7 @@ const LANG = {
       creature: "Kreatur",
       kicker: "Kopfzeile",
       background: "Hintergrund",
+      chips: "Status-Chips",
     },
     ed_account: "Clawdmeter-Konto",
     ed_auto: "Die Entitäten werden für das gewählte Konto automatisch gesetzt.",
@@ -985,13 +988,16 @@ class ClawdmeterCard extends HTMLElement {
       ? `<div class="frame" id="frame"><canvas id="cv" width="240" height="240"></canvas></div>`
       : "";
     const title = this._chrome("title");
+    const chips = this._chrome("chips")
+      ? `<div class="chips" id="chips"></div>`
+      : "";
     const root = document.createElement("ha-card");
     const body = hero
       ? `<div class="hero${this._chrome("background") ? " bg" : ""}">
            <div>
              ${this._chrome("kicker") ? `<div class="kicker">${esc(T.kicker)}</div>` : ""}
              ${title ? `<div class="htitle" id="title">Clawdmeter</div>` : ""}
-             <div class="chips" id="chips"></div>
+             ${chips}
              ${statsHTML}
            </div>
            <div class="hero-right">
@@ -1005,7 +1011,7 @@ class ClawdmeterCard extends HTMLElement {
              ${title ? `<div class="title" id="title">Clawdmeter</div>` : ""}
              <div class="metrics">${barsHTML}</div>
              ${statsHTML}
-             <div class="chips" id="chips"></div>
+             ${chips}
            </div>
          </div>`;
     root.innerHTML = `<style>${STYLE}</style>${body}`;
