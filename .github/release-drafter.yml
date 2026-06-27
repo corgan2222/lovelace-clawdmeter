@@ -24,6 +24,27 @@ categories:
     labels:
       - "dependencies"
       - "build"
+# Auto-apply a label to each PR from its branch prefix, so the release notes are
+# categorised without manual labelling. Runs on pull_request (see the workflow).
+autolabeler:
+  - label: "enhancement"
+    branch:
+      - '/^feat(ure)?\//i'
+  - label: "bug"
+    branch:
+      - '/^(fix|bugfix|hotfix)\//i'
+  - label: "documentation"
+    branch:
+      - '/^docs?\//i'
+  - label: "refactoring"
+    branch:
+      - '/^refactor\//i'
+  - label: "ci"
+    branch:
+      - '/^(ci|chore|build)\//i'
+  - label: "dependencies"
+    branch:
+      - '/^dependabot\//i'
 template: |
   ## Overview of changes
 
