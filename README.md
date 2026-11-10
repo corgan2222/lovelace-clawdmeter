@@ -46,12 +46,6 @@ The custom element is `clawdmeter-card` (use `type: custom:clawdmeter-card`).
   <img src="https://raw.githubusercontent.com/corgan2222/lovelace-clawdmeter/main/images/card_preview.png" alt="Clawdmeter card" width="840">
 </p>
 
-## Status
-
-🧪 **Beta (`v0.1.0`).** The card renders in a real Home Assistant dashboard and ships a
-visual editor. It is usable day-to-day, but still maturing — expect the odd rough edge and
-some changes between versions. Bug reports and ideas are welcome via the issue templates.
-
 ## Screenshots
 
 Taken on a plan without a session limit (Ultra), so the card follows the weekly window.
