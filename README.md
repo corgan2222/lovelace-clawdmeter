@@ -7,14 +7,14 @@
 <p align="center"><em>Your Claude usage as a living pixel-art creature on the dashboard.</em></p>
 
 <p align="center">
-  <a href="https://hacs.xyz"><img alt="HACS Custom" src="https://img.shields.io/badge/HACS-Custom-41BDF5.svg"></a>
+  <a href="https://www.home-assistant.io/integrations/marketplace/"><img alt="Marketplace Custom" src="https://img.shields.io/badge/Marketplace-Custom-41BDF5.svg"></a>
   <img alt="Lovelace" src="https://img.shields.io/badge/Lovelace-card-1c8edb.svg">
   <img alt="i18n" src="https://img.shields.io/badge/i18n-EN%20%2F%20DE-success.svg">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-green.svg">
 </p>
 
 <p align="center">
-  <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=corgan2222&repository=lovelace-clawdmeter&category=plugin"><img alt="Add repository to HACS" src="https://my.home-assistant.io/badges/hacs_repository.svg"></a>
+  <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=corgan2222&repository=lovelace-clawdmeter&category=plugin"><img alt="Open the repository in Home Assistant" src="https://my.home-assistant.io/badges/hacs_repository.svg"></a>
 </p>
 
 <p align="center">
@@ -52,17 +52,70 @@ The custom element is `clawdmeter-card` (use `type: custom:clawdmeter-card`).
 visual editor. It is usable day-to-day, but still maturing — expect the odd rough edge and
 some changes between versions. Bug reports and ideas are welcome via the issue templates.
 
-## Layouts
+## Screenshots
 
-Two layouts, switchable in the editor.
+Taken on a plan without a session limit (Ultra), so the card follows the weekly window.
 
-### Panel
+### Panel layout
 
-![Clawdmeter card — panel layout](images/card_preview_panel.png)
+<table>
+  <tr>
+    <th width="50%">Background on</th>
+    <th width="50%">Background off, the card takes the theme's card background</th>
+  </tr>
+  <tr><td colspan="2"><b>Default elements</b></td></tr>
+  <tr>
+    <td><img src="images/panel_default.png" alt="Panel layout, default elements, background on"></td>
+    <td><img src="images/panel_default_nobg.png" alt="Panel layout, default elements, background off"></td>
+  </tr>
+  <tr><td colspan="2"><b>All bars and values</b></td></tr>
+  <tr>
+    <td><img src="images/panel_all.png" alt="Panel layout, all bars and values, background on"></td>
+    <td><img src="images/panel_all_nobg.png" alt="Panel layout, all bars and values, background off"></td>
+  </tr>
+  <tr><td colspan="2"><b>ApexCharts graph</b> with reset lines, a look ahead and the trend to the limit</td></tr>
+  <tr>
+    <td><img src="images/panel_graph.png" alt="Panel layout with ApexCharts graph, background on"></td>
+    <td><img src="images/panel_graph_nobg.png" alt="Panel layout with ApexCharts graph, background off"></td>
+  </tr>
+</table>
 
-### Hero
+### Hero layout
 
-![Clawdmeter card — hero layout](images/hero_small.png)
+<table>
+  <tr>
+    <th width="50%">Background on</th>
+    <th width="50%">Background off, the card takes the theme's card background</th>
+  </tr>
+  <tr><td colspan="2"><b>Default elements</b></td></tr>
+  <tr>
+    <td><img src="images/hero_default.png" alt="Hero layout, default elements, background on"></td>
+    <td><img src="images/hero_default_nobg.png" alt="Hero layout, default elements, background off"></td>
+  </tr>
+  <tr><td colspan="2"><b>All bars and values</b></td></tr>
+  <tr>
+    <td><img src="images/hero_all.png" alt="Hero layout, all bars and values, background on"></td>
+    <td><img src="images/hero_all_nobg.png" alt="Hero layout, all bars and values, background off"></td>
+  </tr>
+  <tr><td colspan="2"><b>Statistics graph</b>, built into Home Assistant</td></tr>
+  <tr>
+    <td><img src="images/hero_graph.png" alt="Hero layout with statistics graph, background on"></td>
+    <td><img src="images/hero_graph_nobg.png" alt="Hero layout with statistics graph, background off"></td>
+  </tr>
+</table>
+
+### Visual editor
+
+<table>
+  <tr>
+    <th width="50%">Account, layout and elements</th>
+    <th width="50%">Values and graph</th>
+  </tr>
+  <tr>
+    <td><img src="images/editor_options.png" alt="Visual editor, account, layout and elements"></td>
+    <td><img src="images/editor_graph.png" alt="Visual editor, values and graph options"></td>
+  </tr>
+</table>
 
 ## Configuration
 
@@ -97,15 +150,8 @@ the burn rates can share the scale, get their own scale on the right (Mini Graph
 ApexCharts) or a chart of their own below. Usage by surface needs ha‑clawdmeter 0.2.2 or
 later.
 
-The visual editor (panel and hero):
-
-<img src="images/editor_panel.png" alt="Visual editor — panel layout" width="700">
-
-<img src="images/editor_hero.png" alt="Visual editor — hero layout" width="700">
-
-With the **background** turned off, the card uses your theme's card background, so it fits a light theme too:
-
-![Hero layout with the background turned off](images/hero_small_no_bg.png)
+With the **background** turned off, the card uses your theme's card background, so it fits a
+light theme too.
 
 ### YAML (optional)
 
@@ -128,12 +174,19 @@ show: # optional per-element visibility
 
 ## Installation
 
-### HACS (recommended)
+### Marketplace (recommended)
 
-1. In HACS, open the menu (⋮) → **Custom repositories**.
-2. Add `https://github.com/corgan2222/lovelace-clawdmeter` with category **Dashboard**.
-3. Search for **Clawdmeter Card**, install it, then reload your browser.
-4. Add the card to a dashboard — the visual editor fills in your Clawdmeter account automatically.
+Home Assistant 2026.11 and later ship the [Marketplace](https://www.home-assistant.io/integrations/marketplace/),
+which replaces HACS. The card is a custom repository there, which needs a GitHub connection.
+
+1. Go to **Settings** → **Marketplace** and select **Add from link**, or use the button at the top.
+2. Enter `corgan2222/lovelace-clawdmeter` and select **Add**. If you are asked for the type,
+   choose **Dashboard**.
+3. Install **Clawdmeter Card**, then reload your browser.
+4. Add the card to a dashboard. The visual editor fills in your Clawdmeter account automatically.
+
+Updates show up under **Settings** → **Updates**. On older Home Assistant versions, add the
+repository in HACS as a custom repository of category **Dashboard** instead.
 
 You also need the [Clawdmeter integration](https://github.com/corgan2222/ha-clawdmeter) for the
 underlying sensors.
