@@ -3,7 +3,8 @@ name: Release
 # Attaches the card file to a published GitHub release so HACS installs exactly
 # that asset. HACS reads the *version* from the release tag itself — plugins have
 # no version field in hacs.json — so cutting a release (e.g. from the Release
-# Drafter draft) is all that is needed to publish a new version.
+# Drafter draft) is all that is needed to publish a new version. The attached
+# file carries that version too, for the card editor and the console banner.
 on:
   release:
     types: [published]
@@ -19,6 +20,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Stamp the release version into clawdmeter.js
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="${TAG#v}"
+          if ! [[ "$version" =~ ^[0-9A-Za-z.+-]+$ ]]; then
+            echo "::error::Unexpected release tag '$TAG'"
+            exit 1
+          fi
+          sed -i "s/^const CARD_VERSION = \"dev\";/const CARD_VERSION = \"${version}\";/" clawdmeter.js
+          if ! grep -q "^const CARD_VERSION = \"${version}\";" clawdmeter.js; then
+            echo "::error::No 'const CARD_VERSION = \"dev\";' line in clawdmeter.js to stamp"
+            exit 1
+          fi
 
       - name: Attach clawdmeter.js to the release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3

@@ -489,17 +489,27 @@ const CLAWD_ANIMS = {
   },
 };
 
+// The release workflow writes the tag in here; a checkout shows "dev".
+const CARD_VERSION = "dev";
+
 const GROUPS = { idle: [], normal: [], active: [], heavy: [] };
 for (const [slug, a] of Object.entries(CLAWD_ANIMS)) GROUPS[a.group].push(slug);
+// Weekly mode plays the work clips for a while after the weekly figure rose,
+// like the device engine.
+GROUPS.work = Object.keys(CLAWD_ANIMS).filter((s) => s.startsWith("work_"));
+const WORK_MS = 30 * 60 * 1000;
 
 const GRID = 20;
 const CELL = 12; // canvas resolution = 240x240, displayed scaled + pixelated
 const ROTATE_MS = 20000; // switch clip within a group, like the device engine
-const TICK_MS = 50;
+// Longest sleep between animation steps, so a group change is seen soon.
+const MAX_WAIT_MS = 1000;
+// Relative times ("resets in 2h 05m") age without any state change.
+const REFRESH_MS = 30000;
 const BANDS = ["#43A047", "#FFB300", "#E53935"]; // green / amber / red
+const SPLIT_COLORS = ["#CE7D6B", "#5B8DEF", "#9B6BD6", "#7C8394", "#43A047"];
 
 const STYLE = `
-  :host { --clawd-salmon:#CE7D6B; }
   ha-card { overflow:hidden; container-type:inline-size; }
   canvas { width:100%; height:100%; display:block; image-rendering:pixelated; }
   .frame {
@@ -512,17 +522,29 @@ const STYLE = `
   .muted { color:var(--secondary-text-color,#8b94a6); }
   .bar { height:14px; border-radius:8px; background:#2A3042; overflow:hidden; }
   .bar > i { display:block; height:100%; border-radius:8px; transition:width .6s ease; }
+  .bar.split { display:flex; }
+  .bar.split > i { border-radius:0; }
+  .legend { display:flex; flex-wrap:wrap; gap:2px 12px; font-size:.78rem; margin-top:4px; }
+  .legend b { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; }
+  .cap { font-size:.78rem; margin-left:6px; opacity:.8; }
+  .cap:not(:empty)::before { content:"· "; }
 
   /* panel layout */
-  .panel { display:grid; grid-template-columns:auto 1fr; gap:22px; padding:18px; align-items:center; }
+  .panel { display:grid; grid-template-columns:auto 1fr; gap:10px 22px; padding:18px; align-items:start; }
   .panel .frame { width:148px; }
   .panel .title { font-weight:700; font-size:1.15rem; margin-bottom:8px; }
+  /* The embedded graph card spans the whole card and drops its own frame. */
+  .graph { grid-column:1 / -1; min-width:0;
+           --ha-card-background:transparent; --card-background-color:transparent;
+           --ha-card-box-shadow:none; --ha-card-border-width:0; }
+  .bg .graph { --primary-text-color:#F4F6FB; --secondary-text-color:#B9C0D0;
+               --divider-color:rgba(255,255,255,.12); }
 
   /* hero layout */
-  .hero { position:relative; min-height:230px; display:grid; grid-template-columns:1fr auto;
-          gap:16px; padding:26px 28px; }
+  .hero { position:relative; min-height:230px; display:grid; grid-template-columns:minmax(0,1fr) auto;
+          gap:8px 16px; padding:26px 28px; }
   .kicker { color:var(--primary-color,#E89079); font-weight:700; font-size:.72rem; letter-spacing:.14em; }
-  .htitle { font-weight:800; font-size:2.7rem; line-height:1.05; margin:6px 0 10px; }
+  .htitle { font-weight:800; font-size:2.7rem; line-height:1.05; margin:6px 0 10px; overflow-wrap:anywhere; }
   .hero-right { display:flex; flex-direction:column; align-items:center; justify-content:center; min-width:190px; }
   .hero .frame { width:150px; background:transparent; }
 
@@ -545,6 +567,8 @@ const STYLE = `
   .chip > b { width:8px; height:8px; border-radius:50%; }
   .hero .stats { max-width:280px; }
   .hero-right .barwrap { width:170px; margin-top:10px; }
+  .hero-right .cap { display:block; margin-left:0; }
+  .hero-right .cap::before { content:none; }
 
   /* decorative gradient background (toggleable, both layouts). When off, the
      card falls back to the themed ha-card background + text, so it works in
@@ -561,10 +585,15 @@ const STYLE = `
   @container (max-width: 360px) {
     .panel { grid-template-columns:1fr; }
     .panel .frame { justify-self:center; width:132px; }
+    .stats { grid-template-columns:1fr; }
+  }
+  /* The hero's right column needs 190px next to a 2.7rem title, so it stacks
+     earlier than the panel. */
+  @container (max-width: 440px) {
     .hero { grid-template-columns:1fr; }
     .hero-right { min-width:0; align-items:stretch; }
+    .hero-right .frame { align-self:center; }
     .hero-right .bar, .hero-right .barwrap { width:auto; }
-    .stats { grid-template-columns:1fr; }
   }
 `;
 
@@ -572,6 +601,13 @@ function langOf(hass) {
   const l =
     (hass && ((hass.locale && hass.locale.language) || hass.language)) || "en";
   return String(l).split("-")[0].toLowerCase();
+}
+
+// The burn-rate display for a graph type: the configured one if the type
+// offers it, else the type's default (the first in its list).
+function rateScale(type, wanted) {
+  const list = RATE_SCALES[type] || ["shared"];
+  return list.includes(wanted) ? wanted : list[0];
 }
 
 function esc(s) {
@@ -642,8 +678,38 @@ const ELEMENTS = [
     reset: "opus_reset",
     on: false,
   },
-  { id: "extra", kind: "bar", usage: "extra_usage", on: false },
-  { id: "burn", kind: "stat", entity: "burn_rate_5m", on: true },
+  // The per-model weekly cap (for example Fable). Its label and reset come from
+  // attributes of the usage sensor, not from sensors of their own.
+  {
+    id: "model",
+    kind: "bar",
+    usage: "model_usage",
+    labelAttr: "model",
+    resetAttr: "resets_at",
+    capAttr: "allowance_percent_of_weekly",
+    on: false,
+  },
+  // `money` adds the spent and allowed amounts while extra usage is on.
+  { id: "extra", kind: "bar", usage: "extra_usage", money: true, on: false },
+  // The week split by surface (Claude Code, chat, Cowork): shares adding up to
+  // 100 from the `surfaces` attribute, ha-clawdmeter 0.2.2 and later.
+  {
+    id: "surfaces",
+    kind: "split",
+    usage: "surface_usage",
+    attr: "surfaces",
+    on: false,
+  },
+  // In the weekly window a five-minute burn rate barely moves, so the tile
+  // shows the week pace instead (points ahead of or behind linear use).
+  {
+    id: "burn",
+    kind: "stat",
+    entity: "burn_rate_5m",
+    weekEntity: "week_pace",
+    on: true,
+  },
+  { id: "wpace", kind: "stat", entity: "week_pace", signed: true, on: false },
   { id: "burn30", kind: "stat", entity: "burn_rate_30m", on: false },
   { id: "ttl", kind: "stat", entity: "time_to_limit", on: false },
   { id: "eta", kind: "stat", entity: "limit_eta", on: false },
@@ -654,13 +720,62 @@ const ELEMENTS = [
 ];
 
 // Chrome (structural) toggles — also stored in config.show, default on.
-// `hero` marks toggles that only affect the hero layout.
 const CHROME = [
   { id: "title" },
   { id: "creature" },
-  { id: "kicker", hero: true },
-  { id: "background", hero: true },
+  { id: "kicker" },
+  { id: "background" },
   { id: "chips" },
+  // Follow the weekly window when the plan has no five-hour one (Ultra).
+  { id: "weekly" },
+];
+
+// Optional graph inside the card, drawn by another card: config.graph picks
+// it ("history" and "statistics" are built in, the others need their card).
+// The series toggles live in config.show like the other modules.
+const GRAPH_TYPES = ["none", "history", "statistics", "mini", "apex"];
+// Optional cards in the store. Home Assistant's built-in Marketplace (the
+// successor of HACS) installs one on an admin's click in the editor; older
+// installs get a link to HACS, everything else the project page. `id` is the
+// GitHub repository id, which both stores use.
+const GRAPH_CARDS = {
+  mini: {
+    tag: "mini-graph-card",
+    id: "151280062",
+    repo: "kalkih/mini-graph-card",
+  },
+  apex: {
+    tag: "apexcharts-card",
+    id: "331701152",
+    repo: "RomRider/apexcharts-card",
+  },
+};
+// ApexCharts extras, toggled in config.show: reset lines, a third of the time
+// span into the future, and the trend to the limit.
+const APEX_OPTS = [
+  { id: "g_resets", on: true },
+  { id: "g_future", on: true },
+  { id: "g_trend", on: true },
+];
+// How the burn rates sit next to the percentages (config.rate_scale): on the
+// same scale, on a second scale to the right, or in a chart of their own
+// below. The history graph splits by unit itself; a statistics graph has a
+// single y axis, so it offers no second scale.
+const RATE_SCALES = {
+  statistics: ["shared", "chart"],
+  mini: ["axis", "shared", "chart"],
+  apex: ["axis", "shared", "chart"],
+};
+const RESET_COLOR = "#7C8394";
+const GRAPH_SERIES = [
+  { id: "g_usage", on: true, keys: ["session_usage", "week_usage"] },
+  {
+    id: "g_burn",
+    on: true,
+    keys: ["burn_rate_5m", "burn_rate_30m"],
+    secondary: true,
+  },
+  { id: "g_model", on: false, keys: ["model_usage"] },
 ];
 
 // Inline language files. A single-file Lovelace card bundles its translations
@@ -671,20 +786,20 @@ const LANG = {
     kicker: "HOME ASSISTANT × CLAUDE",
     resetting: "resetting…",
     reset_in: "resets in {t}",
-    in_: "in {t}",
-    ago: "{t} ago",
     chip_extra: "Extra usage on",
     chip_over: "Limit before reset",
     dur_h: "h",
     dur_m: "m",
+    dur_min: " min",
     dur_d: "d",
-    dur_zero: "0m",
+    dur_zero: "0 min",
     sev: { warning: "Extra usage: warning", critical: "Extra usage: critical" },
     el: {
       session: "Session",
       week: "Week",
       sonnet: "Sonnet (weekly)",
       opus: "Opus (weekly)",
+      model: "Model (weekly)",
       extra: "Extra usage",
       burn: "Burn rate 5m",
       burn30: "Burn rate 30m",
@@ -695,7 +810,31 @@ const LANG = {
       pace: "Pace",
       peak: "Peak today",
       resetin: "Session resets in",
+      wpace: "Week pace",
+      surfaces: "Usage by surface",
     },
+    model_cap: "max {p} % of the week",
+    extra_money: "{c} of {l}",
+    surface: {
+      claude_code: "Claude Code",
+      chat: "Chat",
+      cowork: "Cowork",
+      other: "Other",
+    },
+    // Labels while the session entities follow the weekly window.
+    el_week: {
+      session: "Week",
+      resetin: "Week resets in",
+      burn: "Week pace",
+      ttl: "Time to weekly limit",
+      runwaybar: "Time to weekly limit",
+    },
+    model_lbl: "{m} (weekly)",
+    reset_week: "Week reset",
+    reset_session: "Session reset",
+    now: "now",
+    trend: "Trend",
+    pace_line: "Even use",
     runway_ok: "Lasts until reset",
     runway_short: "Limit {t} before reset",
     ch: {
@@ -704,6 +843,7 @@ const LANG = {
       kicker: "Header line",
       background: "Background",
       chips: "Status chips",
+      weekly: "Follow weekly window",
     },
     ed_account: "Clawdmeter account",
     ed_auto: "Entities are filled in automatically for the selected account.",
@@ -715,17 +855,50 @@ const LANG = {
     ed_display: "General",
     ed_bars: "Bars",
     ed_values: "Values",
+    ed_versions: "Integration {i} · Card {c}",
+    ed_graph: "Graph",
+    ed_graph_hours: "Time span (hours)",
+    ed_graph_series: "Graph series",
+    ed_mini_missing: "{card} is not installed, the history graph is used.",
+    ed_apex: "ApexCharts options",
+    ed_rates: "Burn rates",
+    rate_scale: {
+      shared: "Same scale",
+      axis: "Own scale on the right",
+      chart: "Own chart",
+    },
+    ed_mini_install: "Install",
+    ed_mini_installing: "Installing…",
+    ed_mini_done: "Installed. Reload the page to use it.",
+    ed_mini_failed: "Install failed:",
+    ed_mini_store: "Open in the Marketplace",
+    ed_mini_hacs: "Open in HACS",
+    ed_mini_github: "Get it on GitHub",
+    graph: {
+      none: "Off",
+      history: "History graph (default)",
+      statistics: "Statistics graph",
+      mini: "Mini graph card",
+      apex: "ApexCharts card",
+    },
+    g: {
+      g_usage: "Session / weekly usage",
+      g_burn: "Burn rates",
+      g_model: "Model (weekly)",
+      g_resets: "Reset lines",
+      g_future: "A third into the future",
+      g_trend: "Trend to the limit",
+    },
   },
   de: {
     kicker: "HOME ASSISTANT × CLAUDE",
     resetting: "wird zurückgesetzt…",
     reset_in: "Reset in {t}",
-    in_: "in {t}",
-    ago: "vor {t}",
     chip_extra: "Zusatznutzung aktiv",
     chip_over: "Limit vor Reset",
     dur_h: "h",
-    dur_m: " min",
+    dur_m: "m",
+    dur_min: " min",
     dur_d: "d",
     dur_zero: "0 min",
     sev: {
@@ -737,6 +910,7 @@ const LANG = {
       week: "Woche",
       sonnet: "Sonnet (Woche)",
       opus: "Opus (Woche)",
+      model: "Modell (Woche)",
       extra: "Zusatznutzung",
       burn: "Verbrauchsrate 5m",
       burn30: "Verbrauchsrate 30m",
@@ -747,7 +921,30 @@ const LANG = {
       pace: "Tempo",
       peak: "Tageshoch",
       resetin: "Sitzungs-Reset in",
+      wpace: "Wochen-Pace",
+      surfaces: "Nutzung nach Oberfläche",
     },
+    model_cap: "max. {p} % der Woche",
+    extra_money: "{c} von {l}",
+    surface: {
+      claude_code: "Claude Code",
+      chat: "Chat",
+      cowork: "Cowork",
+      other: "Sonstiges",
+    },
+    el_week: {
+      session: "Woche",
+      resetin: "Wochen-Reset in",
+      burn: "Wochen-Pace",
+      ttl: "Zeit bis Wochenlimit",
+      runwaybar: "Zeit bis Wochenlimit",
+    },
+    model_lbl: "{m} (Woche)",
+    reset_week: "Wochen-Reset",
+    reset_session: "Sitzungs-Reset",
+    now: "jetzt",
+    trend: "Trend",
+    pace_line: "Gleichmäßig",
     runway_ok: "Reicht bis zum Reset",
     runway_short: "Limit {t} vor Reset",
     ch: {
@@ -756,6 +953,7 @@ const LANG = {
       kicker: "Kopfzeile",
       background: "Hintergrund",
       chips: "Status-Chips",
+      weekly: "Wochenfenster folgen",
     },
     ed_account: "Clawdmeter-Konto",
     ed_auto: "Die Entitäten werden für das gewählte Konto automatisch gesetzt.",
@@ -768,19 +966,56 @@ const LANG = {
     ed_display: "Allgemein",
     ed_bars: "Balken",
     ed_values: "Werte",
+    ed_versions: "Integration {i} · Karte {c}",
+    ed_graph: "Graph",
+    ed_graph_hours: "Zeitraum (Stunden)",
+    ed_graph_series: "Reihen im Graph",
+    ed_mini_missing:
+      "{card} ist nicht installiert, es wird der Verlaufsgraph genutzt.",
+    ed_apex: "ApexCharts-Optionen",
+    ed_rates: "Verbrauchsraten",
+    rate_scale: {
+      shared: "Gemeinsame Skala",
+      axis: "Eigene Skala rechts",
+      chart: "Eigenes Diagramm",
+    },
+    ed_mini_install: "Installieren",
+    ed_mini_installing: "Wird installiert…",
+    ed_mini_done: "Installiert. Seite neu laden, dann ist sie verfügbar.",
+    ed_mini_failed: "Installation fehlgeschlagen:",
+    ed_mini_store: "Im Marketplace öffnen",
+    ed_mini_hacs: "In HACS öffnen",
+    ed_mini_github: "Auf GitHub holen",
+    graph: {
+      none: "Aus",
+      history: "Verlaufsgraph (Standard)",
+      statistics: "Statistik-Graph",
+      mini: "Mini Graph Card",
+      apex: "ApexCharts Card",
+    },
+    g: {
+      g_usage: "Sitzungs- / Wochennutzung",
+      g_burn: "Verbrauchsraten",
+      g_model: "Modell (Woche)",
+      g_resets: "Reset-Linien",
+      g_future: "Ein Drittel in die Zukunft",
+      g_trend: "Trend bis zum Limit",
+    },
   },
 };
 
 const EDITOR_STYLE = `
   .ed { display:flex; flex-direction:column; gap:6px; padding:4px 2px; }
   .ed .lbl { font-weight:600; font-size:.82rem; margin-top:8px; }
-  .ed select, .ed input[type=text] {
+  .ed .hint a { color:var(--primary-color,#03a9f4); }
+  .ed select, .ed input[type=text], .ed input[type=number] {
     padding:8px 10px; border-radius:8px; border:1px solid var(--divider-color,#444);
     background:var(--card-background-color,#1c1c1c); color:var(--primary-text-color,#eee); font-size:.95rem;
   }
   .ed .hint { font-size:.76rem; color:var(--secondary-text-color,#9aa); margin-top:2px; }
   .ed .checks { display:grid; grid-template-columns:1fr 1fr; gap:4px 12px; margin-top:4px; }
   .ed .chk { display:flex; align-items:center; gap:8px; font-size:.9rem; cursor:pointer; }
+  .ed .ver { margin-top:12px; text-align:right; }
 `;
 
 class ClawdmeterCard extends HTMLElement {
@@ -799,17 +1034,22 @@ class ClawdmeterCard extends HTMLElement {
       this._t0 = 0;
     }
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+    // Every entity the card reads; only their changes need a redraw.
+    const prevIds = (this._ids || []).join();
+    this._ids = Object.values(this._config).filter(
+      (v) => typeof v === "string" && v.includes("."),
+    );
     // Only rebuild the DOM when the visible skeleton can change; a title-only
     // edit (per-keystroke in the editor) just refreshes via _update().
     const structural =
       !this._built ||
       !prev ||
       prev.layout !== this._config.layout ||
+      prev.graph !== this._config.graph ||
+      prev.graph_hours !== this._config.graph_hours ||
+      prev.rate_scale !== this._config.rate_scale ||
       JSON.stringify(prev.show) !== JSON.stringify(this._config.show) ||
-      ELEMENTS.some((e) => {
-        const k = e.kind === "bar" ? e.usage : e.entity;
-        return prev[k] !== this._config[k];
-      });
+      prevIds !== this._ids.join();
     if (this._hass) {
       if (structural) this._build();
       this._update();
@@ -817,26 +1057,67 @@ class ClawdmeterCard extends HTMLElement {
   }
 
   set hass(hass) {
+    const prev = this._hass;
     this._hass = hass;
-    if (!this._built) this._build();
+    if (this._graphEl) this._graphEl.hass = hass;
+    // The session window can appear or vanish at runtime, which changes the
+    // visible bars, so that is a structural change too.
+    if (
+      !this._built ||
+      this._sessionIsWeek() !== this._sw ||
+      this._graphStateKey() !== this._gk
+    ) {
+      this._build();
+      this._update();
+      return;
+    }
+    // Home Assistant sets hass on every state change anywhere; redraw only
+    // when this card's entities, the user's locale or a device name changed.
+    if (
+      prev &&
+      prev.locale === hass.locale &&
+      prev.devices === hass.devices &&
+      this._ids.every((id) => prev.states[id] === hass.states[id])
+    )
+      return;
     this._update();
   }
 
   connectedCallback() {
-    if (this._timer) return;
-    this._timer = setInterval(() => this._tick(), TICK_MS);
+    this._schedule();
+    if (!this._refresh)
+      this._refresh = setInterval(() => this._update(), REFRESH_MS);
   }
 
   disconnectedCallback() {
-    clearInterval(this._timer);
+    clearTimeout(this._timer);
     this._timer = null;
+    clearInterval(this._refresh);
+    this._refresh = null;
+  }
+
+  // Wake up when the next animation frame is due instead of polling: the
+  // clips hold each frame for 300 ms or more. Nothing runs without a canvas.
+  _schedule() {
+    clearTimeout(this._timer);
+    this._timer = null;
+    if (!this.isConnected || !this._ctx) return;
+    const a = this._anim && CLAWD_ANIMS[this._anim];
+    const due = a ? a.holds[this._frame] - (performance.now() - this._t0) : 0;
+    this._timer = setTimeout(
+      () => {
+        this._tick();
+        this._schedule();
+      },
+      Math.min(Math.max(due, 0), MAX_WAIT_MS),
+    );
   }
 
   getCardSize() {
-    return this._config.layout === "hero" ? 3 : 4;
+    const graph = this._config.graph && this._config.graph !== "none" ? 3 : 0;
+    return (this._config.layout === "hero" ? 3 : 4) + graph;
   }
 
-  // ---- data helpers ----
   _st(key) {
     const id = this._config[key];
     const s = id && this._hass && this._hass.states[id];
@@ -850,10 +1131,29 @@ class ClawdmeterCard extends HTMLElement {
 
   _title() {
     if (this._config.title) return this._config.title;
+    // The device name is the account title ("Claude Stefan (Ultra)"). Cutting
+    // the entity part off a friendly name fails for multi-word entity names
+    // ("Session usage"), so that is only the fallback without a device.
+    const h = this._hass;
     const id = this._config.session_usage || this._config.animation_group;
-    const s = id && this._hass.states[id];
-    const dev = s && s.attributes && s.attributes.friendly_name;
-    return dev ? dev.replace(/\s+\S+$/, "") : "Clawdmeter";
+    const ent = id && h.entities && h.entities[id];
+    const devId = this._config.device || (ent && ent.device_id);
+    const dev = devId && h.devices && h.devices[devId];
+    if (dev && (dev.name_by_user || dev.name))
+      return dev.name_by_user || dev.name;
+    const s = id && h.states[id];
+    const name = s && s.attributes && s.attributes.friendly_name;
+    return name ? name.replace(/\s+\S+$/, "") : "Clawdmeter";
+  }
+
+  // On a plan without a five-hour window the integration fills the session
+  // sensors from the weekly window and says so in their `window` attribute.
+  // The "weekly" toggle turns all weekly-mode behaviour off.
+  _sessionIsWeek() {
+    if (!this._chrome("weekly")) return false;
+    const id = this._config.session_usage;
+    const s = id && this._hass && this._hass.states[id];
+    return !!(s && s.attributes && s.attributes.window === "weekly");
   }
 
   _t() {
@@ -866,19 +1166,281 @@ class ClawdmeterCard extends HTMLElement {
     if (!Number.isFinite(m) || m <= 0) return T.dur_zero;
     const d = Math.floor(m / 1440);
     const h = Math.floor((m % 1440) / 60);
-    if (d) return `${d}${T.dur_d} ${h}${T.dur_h}`;
-    return h ? `${h}${T.dur_h} ${m % 60}${T.dur_m}` : `${m}${T.dur_m}`;
+    // Same format as the device: "45 min", "23h 08m", "8d 08h".
+    const p = (n) => String(n).padStart(2, "0");
+    if (d) return `${d}${T.dur_d} ${p(h)}${T.dur_h}`;
+    return h ? `${h}${T.dur_h} ${p(m % 60)}${T.dur_m}` : `${m}${T.dur_min}`;
   }
 
-  _rel(iso) {
+  // A bar's reset instant is a sensor of its own, or an attribute of its usage
+  // sensor (the per-model cap reports `resets_at`).
+  _resetRaw(el) {
+    if (!el.resetAttr) return this._st(el.reset);
+    return this._attr(el.usage, el.resetAttr);
+  }
+
+  _attr(key, name) {
+    const id = this._config[key];
+    const s = id && this._hass && this._hass.states[id];
+    return s && s.attributes ? s.attributes[name] : undefined;
+  }
+
+  _label(el, T) {
+    const name = el.labelAttr && this._attr(el.usage, el.labelAttr);
+    if (name) return T.model_lbl.replace("{m}", name);
+    return (this._sw && T.el_week[el.id]) || T.el[el.id] || el.id;
+  }
+
+  // A module's toggle from config.show, else its default.
+  _on(item) {
+    const show = this._config.show || {};
+    return show[item.id] !== undefined ? !!show[item.id] : item.on;
+  }
+
+  // The card config for the embedded graph, or null for none.
+  _graphConfig() {
+    let type = this._config.graph;
+    if (!GRAPH_TYPES.includes(type) || type === "none") return null;
+    // An optional card that is not installed falls back to the history graph.
+    if (GRAPH_CARDS[type] && !customElements.get(GRAPH_CARDS[type].tag))
+      type = "history";
     const T = this._t();
-    const mins = Math.round((new Date(iso).getTime() - Date.now()) / 60000);
-    if (!Number.isFinite(mins)) return "–";
-    return (mins < 0 ? T.ago : T.in_).replace("{t}", this._dur(mins));
+    const model = ELEMENTS.find((e) => e.id === "model");
+    const names = {
+      session_usage: T.el.session,
+      week_usage: T.el.week,
+      burn_rate_5m: T.el.burn,
+      burn_rate_30m: T.el.burn30,
+      model_usage: this._label(model, T),
+    };
+    const items = [];
+    for (const g of GRAPH_SERIES) {
+      if (!this._on(g)) continue;
+      for (const k of g.keys) {
+        // In the weekly window the session series repeats the week.
+        if (k === "session_usage" && this._sw) continue;
+        const entity = this._config[k];
+        if (entity)
+          items.push({ entity, name: names[k], secondary: g.secondary });
+      }
+    }
+    if (!items.length) return null;
+    const h = Number(this._config.graph_hours);
+    const hours = h > 0 ? h : 24;
+    const rates = items.filter((i) => i.secondary);
+    const rest = items.filter((i) => !i.secondary);
+    const both = rates.length > 0 && rest.length > 0;
+    const scale = rateScale(type, this._config.rate_scale);
+    if (scale === "chart" && both)
+      return {
+        type: "vertical-stack",
+        cards: [
+          this._graphCard(type, rest, hours, T, false),
+          this._graphCard(type, rates, hours, T, false),
+        ],
+      };
+    return this._graphCard(type, items, hours, T, scale === "axis" && both);
   }
 
-  _fmtReset(key) {
-    const raw = this._st(key);
+  // One graph card of `type` for the given series; `dual` puts the burn
+  // rates on a second scale to the right.
+  _graphCard(type, items, hours, T, dual) {
+    const entities = items.map(({ entity, name }) => ({ entity, name }));
+    if (type === "statistics")
+      return {
+        type: "statistics-graph",
+        chart_type: "line",
+        stat_types: ["mean"],
+        period: hours <= 48 ? "5minute" : "hour",
+        days_to_show: Math.max(1, Math.ceil(hours / 24)),
+        entities,
+      };
+    if (type === "mini")
+      return {
+        type: "custom:mini-graph-card",
+        hours_to_show: hours,
+        points_per_hour: hours <= 24 ? 4 : 1,
+        line_width: 2,
+        // The card already shows name and value; a fill hides the other lines.
+        show: {
+          name: false,
+          icon: false,
+          state: false,
+          fill: false,
+          legend: true,
+          labels: true,
+          labels_secondary: true,
+        },
+        entities: items.map(({ entity, name, secondary }) =>
+          dual && secondary
+            ? { entity, name, y_axis: "secondary" }
+            : { entity, name },
+        ),
+      };
+    if (type === "apex") return this._apexConfig(items, hours, T, dual);
+    return { type: "history-graph", hours_to_show: hours, entities };
+  }
+
+  _apexOn(id) {
+    return this._on(APEX_OPTS.find((o) => o.id === id));
+  }
+
+  // The reset instants shown as lines: the next session and weekly reset, and
+  // the previous weekly one (exactly a week earlier). Past session resets are
+  // unknown, a five-hour window only opens with the first use.
+  _resetMarks(T) {
+    const out = [];
+    const at = (key) => {
+      const t = new Date(this._st(key)).getTime();
+      return Number.isFinite(t) ? t : null;
+    };
+    const week = at("week_reset");
+    if (week) {
+      out.push({ x: week, text: T.reset_week });
+      out.push({ x: week - 7 * 864e5, text: T.reset_week });
+    }
+    const session = this._sw ? null : at("session_reset");
+    if (session) out.push({ x: session, text: T.reset_session });
+    return out;
+  }
+
+  _apexConfig(items, hours, T, secondary) {
+    const future = this._apexOn("g_future") ? Math.round(hours / 3) : 0;
+    const hasRate = items.some((i) => i.secondary);
+    const hasPct = items.some((i) => !i.secondary);
+    const series = items.map(({ entity, name, secondary: sec }) => ({
+      entity,
+      name,
+      stroke_width: 2,
+      // Smoothed curves swing below 0 or loop around a rate spike.
+      curve: sec ? "straight" : "stepline",
+      // History stops at now; the future part stays empty.
+      extend_to: "now",
+      ...(secondary ? { yaxis_id: sec ? "rate" : "pct" } : {}),
+    }));
+    const usageKey = this._sw ? "week_usage" : "session_usage";
+    const usage = this._config[usageKey];
+    const ttl = this._config.time_to_limit;
+    // Trend and even-use line are percentages, so only a percent chart has them.
+    if (hasPct && this._apexOn("g_trend") && usage && ttl) {
+      // From the current value up to 100 % at the integration's time to
+      // limit, cut at the end of the chart. Without a projection it stays flat.
+      series.push({
+        entity: usage,
+        name: T.trend,
+        color: "#E89079",
+        // A projected end point is no reading, so the legend shows no value.
+        show: { legend_value: false },
+        stroke_width: 2,
+        stroke_dash: 6,
+        curve: "straight",
+        ...(secondary ? { yaxis_id: "pct" } : {}),
+        data_generator: `const now = Date.now();
+const v = parseFloat(entity.state);
+if (!Number.isFinite(v)) return [];
+const ttl = parseFloat((hass.states[${JSON.stringify(ttl)}] || {}).state);
+const last = Math.max(now, end.getTime());
+if (!Number.isFinite(ttl) || ttl <= 0) return [[now, v], [last, v]];
+const hit = now + ttl * 60000;
+const stop = Math.min(hit, last);
+return [[now, v], [stop, v + ((100 - v) * (stop - now)) / (hit - now)]];`,
+      });
+    }
+    const weekReset = this._config.week_reset;
+    if (
+      hasPct &&
+      this._apexOn("g_trend") &&
+      this._sw &&
+      weekReset &&
+      this._config.week_usage
+    ) {
+      // Even use over the week: 0 % at the last reset, 100 % at the next one.
+      series.push({
+        entity: this._config.week_usage,
+        name: T.pace_line,
+        color: RESET_COLOR,
+        show: { legend_value: false },
+        stroke_width: 1,
+        stroke_dash: 3,
+        curve: "straight",
+        ...(secondary ? { yaxis_id: "pct" } : {}),
+        data_generator: `const next = new Date((hass.states[${JSON.stringify(weekReset)}] || {}).state).getTime();
+if (!Number.isFinite(next)) return [];
+return [[next - 7 * 864e5, 0], [next, 100]];`,
+      });
+    }
+    const marks = this._apexOn("g_resets") ? this._resetMarks(T) : [];
+    return {
+      type: "custom:apexcharts-card",
+      graph_span: `${hours + future}h`,
+      ...(future ? { span: { offset: `+${future}h` } } : {}),
+      now: { show: !!future, color: RESET_COLOR, label: T.now },
+      header: { show: false },
+      ...(secondary
+        ? {
+            yaxis: [
+              { id: "pct", min: 0, max: 100, decimals: 0 },
+              { id: "rate", opposite: true, min: 0, decimals: 1 },
+            ],
+          }
+        : hasPct && !hasRate
+          ? { yaxis: [{ min: 0, max: 100, decimals: 0 }] }
+          : { yaxis: [{ min: 0, decimals: 1 }] }),
+      series,
+      apex_config: {
+        chart: { height: 240 },
+        legend: { show: true },
+        annotations: {
+          xaxis: marks.map((m) => ({
+            x: m.x,
+            borderColor: RESET_COLOR,
+            strokeDashArray: 0,
+            label: {
+              text: m.text,
+              borderColor: RESET_COLOR,
+              style: { color: "#fff", background: RESET_COLOR },
+            },
+          })),
+        },
+      },
+    };
+  }
+
+  // Key of everything the ApexCharts config takes from states, so the graph
+  // is rebuilt when a reset moves.
+  _graphStateKey() {
+    if (this._config.graph !== "apex") return "";
+    return `${this._st("week_reset")}|${this._st("session_reset")}`;
+  }
+
+  async _mountGraph(cfg) {
+    const box = this.$("graph");
+    const token = (this._graphToken = {});
+    if (!box || !window.loadCardHelpers) return;
+    const helpers = await window.loadCardHelpers();
+    // A rebuild while the helpers loaded has its own graph on the way.
+    if (token !== this._graphToken) return;
+    const el = helpers.createCardElement(cfg);
+    el.hass = this._hass;
+    box.replaceChildren(el);
+    this._graphEl = el;
+    // Dashboard resources load after this card, so an optional graph card may
+    // still be on its way. Swap the fallback once it registers; if it never
+    // does, the promise simply never settles.
+    const want = GRAPH_CARDS[this._config.graph];
+    if (want && !customElements.get(want.tag) && this._waiting !== want.tag) {
+      this._waiting = want.tag;
+      customElements.whenDefined(want.tag).then(() => {
+        this._waiting = null;
+        if (this._built && GRAPH_CARDS[this._config.graph] === want) {
+          this._build();
+          this._update();
+        }
+      });
+    }
+  }
+
+  _fmtReset(raw) {
     if (!raw || raw === "unknown" || raw === "unavailable") return "";
     const T = this._t();
     const mins = Math.round((new Date(raw).getTime() - Date.now()) / 60000);
@@ -888,20 +1450,48 @@ class ClawdmeterCard extends HTMLElement {
   }
 
   _fmtStat(el) {
-    const id = this._config[el.entity];
+    const week = this._sw && el.weekEntity && this._config[el.weekEntity];
+    const id = week || this._config[el.entity];
     const s = id && this._hass && this._hass.states[id];
     if (!s || s.state === "unknown" || s.state === "unavailable") return "–";
     const a = s.attributes || {};
     if (a.device_class === "timestamp") return this._clock(s.state);
     const u = a.unit_of_measurement;
     const v = parseFloat(s.state);
+    // The week pace is a signed distance from linear use, so it keeps its sign.
+    if ((week || el.signed) && Number.isFinite(v))
+      return `${v > 0 ? "+" : v < 0 ? "−" : ""}${this._fmtNum(Math.abs(v), 1)}${u || ""}`;
     if (u === "min") return (v < 0 ? "−" : "") + this._dur(v);
     if (Number.isFinite(v)) {
       const dec = u === "%/min" ? 2 : u && u !== "%" ? 1 : 0;
-      const n = dec ? v.toFixed(dec) : String(Math.round(v));
+      const n = this._fmtNum(v, dec);
       return u && u !== "%" ? `${n} ${u}` : `${n}${u || ""}`;
     }
     return u ? `${s.state} ${u}` : s.state;
+  }
+
+  // Decimals in the number format of the user's profile, the way Home
+  // Assistant's own cards map its options to a locale.
+  _fmtNum(v, dec) {
+    const loc = (this._hass && this._hass.locale) || {};
+    return v.toLocaleString(this._numLocale(), {
+      minimumFractionDigits: dec,
+      maximumFractionDigits: dec,
+      useGrouping: loc.number_format !== "none",
+    });
+  }
+
+  _numLocale() {
+    const loc = (this._hass && this._hass.locale) || {};
+    const map = {
+      comma_decimal: "en-US",
+      decimal_comma: "de",
+      space_comma: "fr",
+      system: undefined,
+    };
+    return loc.number_format in map
+      ? map[loc.number_format]
+      : langOf(this._hass);
   }
 
   _band(pct) {
@@ -909,54 +1499,141 @@ class ClawdmeterCard extends HTMLElement {
     return pct >= 80 ? BANDS[2] : pct >= 50 ? BANDS[1] : BANDS[0];
   }
 
-  // ---- DOM ----
   _has(el) {
-    if (el.kind === "bar") return !!this._config[el.usage];
+    if (el.kind === "bar" || el.kind === "split")
+      return !!this._config[el.usage];
     if (el.kind === "runway") return !!this._config.session_usage;
     return !!this._config[el.entity];
   }
 
   _visibleEls() {
-    const show = this._config.show || {};
-    return ELEMENTS.filter((el) => {
-      const on = show[el.id] !== undefined ? !!show[el.id] : el.on;
-      return on && this._has(el);
-    });
+    const vis = ELEMENTS.filter((el) => this._on(el) && this._has(el));
+    if (!this._sw) return vis;
+    // In the weekly window the session bar repeats the week bar, and the burn
+    // tile already shows the week pace.
+    const shown = (id) => vis.some((el) => el.id === id);
+    return vis.filter(
+      (el) =>
+        !(el.id === "session" && shown("week")) &&
+        !(el.id === "wpace" && shown("burn")),
+    );
   }
 
   _barSkeleton(el, T) {
+    const cap = el.capAttr ? `<span class="cap" id="cap_${el.id}"></span>` : "";
+    const sub = el.reset || el.resetAttr || el.money;
     return `<div class="barwrap">
-        <div class="row"><span class="muted">${esc(T.el[el.id] || el.id)}</span><span id="pct_${el.id}">–</span></div>
+        <div class="row"><span class="muted"><span id="lbl_${el.id}">${esc(this._label(el, T))}</span>${cap}</span><span id="pct_${el.id}">–</span></div>
         <div class="bar"><i id="bar_${el.id}"></i></div>
-        ${el.reset ? `<div class="sub muted"><span id="sub_${el.id}"></span><span id="subr_${el.id}"></span></div>` : ""}
+        ${sub ? `<div class="sub muted"><span id="sub_${el.id}"></span><span id="subr_${el.id}"></span></div>` : ""}
       </div>`;
+  }
+
+  _splitSkeleton(el, T) {
+    return `<div class="barwrap">
+        <div class="row"><span class="muted">${esc(this._label(el, T))}</span></div>
+        <div class="bar split" id="split_${el.id}"></div>
+        <div class="legend muted" id="legend_${el.id}"></div>
+      </div>`;
+  }
+
+  // Shares per surface as one stacked bar and a legend, largest first.
+  _updateSplit(el) {
+    const T = this._t();
+    const raw = this._attr(el.usage, el.attr);
+    const parts = Object.entries(raw && typeof raw === "object" ? raw : {})
+      .map(([k, v]) => [k, Number(v)])
+      .filter(([, v]) => Number.isFinite(v) && v > 0)
+      .sort((a, b) => b[1] - a[1]);
+    const name = (k) => T.surface[k] || k.replace(/_/g, " ");
+    const bar = parts
+      .map(
+        ([k, v], i) =>
+          `<i style="width:${v}%;background:${SPLIT_COLORS[i % SPLIT_COLORS.length]}" title="${esc(name(k))} ${v}%"></i>`,
+      )
+      .join("");
+    const legend = parts
+      .map(
+        ([k, v], i) =>
+          `<span><b style="background:${SPLIT_COLORS[i % SPLIT_COLORS.length]}"></b>${esc(name(k))} ${this._fmtNum(v, 0)}%</span>`,
+      )
+      .join("");
+    const box = this.$("split_" + el.id);
+    if (box && box.innerHTML !== bar) box.innerHTML = bar;
+    const leg = this.$("legend_" + el.id);
+    if (leg && leg.innerHTML !== legend) leg.innerHTML = legend;
+  }
+
+  // "€0,00 von €20,00", only while extra usage is switched on.
+  _money() {
+    if (this._st("extra_enabled") !== "on") return "";
+    const fmt = (key) => {
+      const id = this._config[key];
+      const s = id && this._hass.states[id];
+      const v = s && parseFloat(s.state);
+      if (!Number.isFinite(v)) return null;
+      const cur = s.attributes && s.attributes.unit_of_measurement;
+      try {
+        return v.toLocaleString(this._numLocale(), {
+          style: "currency",
+          currency: cur,
+        });
+      } catch (err) {
+        return `${this._fmtNum(v, 2)} ${cur || ""}`.trim();
+      }
+    };
+    const c = fmt("extra_credits");
+    const l = fmt("extra_limit");
+    return c && l
+      ? this._t().extra_money.replace("{c}", c).replace("{l}", l)
+      : "";
   }
 
   _runwaySkeleton(el, T) {
     return `<div class="barwrap">
-        <div class="row"><span class="muted">${esc(T.el.runwaybar)}</span><span id="rwv_${el.id}">–</span></div>
+        <div class="row"><span class="muted">${esc(this._label(el, T))}</span><span id="rwv_${el.id}">–</span></div>
         <div class="bar"><i id="bar_${el.id}"></i></div>
         <div class="sub muted"><span id="sub_${el.id}"></span><span id="subr_${el.id}"></span></div>
       </div>`;
   }
 
   _chrome(id) {
-    const show = this._config.show || {};
-    return show[id] !== undefined ? !!show[id] : true;
+    return this._on({ id, on: true });
   }
 
   _clock(raw) {
     if (!raw || raw === "unknown" || raw === "unavailable") return "";
     const d = new Date(raw);
     if (isNaN(d.getTime())) return "";
-    const lang = langOf(this._hass);
-    const time = d.toLocaleTimeString(lang, {
+    const opts = this._clockOpts();
+    const time = d.toLocaleTimeString(opts.locale, {
       hour: "2-digit",
       minute: "2-digit",
+      hour12: opts.hour12,
+      timeZone: opts.timeZone,
     });
-    const now = new Date();
-    if (d.toDateString() === now.toDateString()) return time;
-    return `${d.toLocaleDateString(lang, { weekday: "short" })} ${time}`;
+    const day = (x) =>
+      x.toLocaleDateString(opts.locale, { timeZone: opts.timeZone });
+    if (day(d) === day(new Date())) return time;
+    const wd = d.toLocaleDateString(opts.locale, {
+      weekday: "short",
+      timeZone: opts.timeZone,
+    });
+    return `${wd} ${time}`;
+  }
+
+  // The time format, language and time zone from the user's profile, the same
+  // settings Home Assistant's own cards follow.
+  _clockOpts() {
+    const h = this._hass || {};
+    const loc = h.locale || {};
+    const tf = loc.time_format;
+    return {
+      locale: tf === "system" ? undefined : loc.language || langOf(h),
+      hour12: tf === "12" ? true : tf === "24" ? false : undefined,
+      timeZone:
+        loc.time_zone === "server" && h.config ? h.config.time_zone : undefined,
+    };
   }
 
   _fmtClock(key) {
@@ -964,23 +1641,24 @@ class ClawdmeterCard extends HTMLElement {
   }
 
   _statSkeleton(el, T) {
-    return `<div class="stat"><span class="k muted">${esc(T.el[el.id] || el.id)}</span><span class="v" id="stat_${el.id}">–</span></div>`;
+    return `<div class="stat"><span class="k muted">${esc(this._label(el, T))}</span><span class="v" id="stat_${el.id}">–</span></div>`;
   }
 
   _build() {
     const T = this._t();
     const hero = this._config.layout === "hero";
+    this._sw = this._sessionIsWeek();
+    this._gk = this._graphStateKey();
     const vis = this._visibleEls();
     this._vis = vis;
-    const bars = vis.filter((e) => e.kind === "bar" || e.kind === "runway");
+    const bars = vis.filter((e) => e.kind !== "stat");
     const stats = vis.filter((e) => e.kind === "stat");
-    const barsHTML = bars
-      .map((e) =>
-        e.kind === "runway"
-          ? this._runwaySkeleton(e, T)
-          : this._barSkeleton(e, T),
-      )
-      .join("");
+    const skeleton = {
+      bar: (e) => this._barSkeleton(e, T),
+      runway: (e) => this._runwaySkeleton(e, T),
+      split: (e) => this._splitSkeleton(e, T),
+    };
+    const barsHTML = bars.map((e) => skeleton[e.kind](e)).join("");
     const statsHTML = stats.length
       ? `<div class="stats">${stats.map((e) => this._statSkeleton(e, T)).join("")}</div>`
       : "";
@@ -991,6 +1669,8 @@ class ClawdmeterCard extends HTMLElement {
     const chips = this._chrome("chips")
       ? `<div class="chips" id="chips"></div>`
       : "";
+    const graphCfg = this._graphConfig();
+    const graph = graphCfg ? `<div class="graph" id="graph"></div>` : "";
     const root = document.createElement("ha-card");
     const body = hero
       ? `<div class="hero${this._chrome("background") ? " bg" : ""}">
@@ -1004,6 +1684,7 @@ class ClawdmeterCard extends HTMLElement {
              ${canvas}
              ${barsHTML}
            </div>
+           ${graph}
          </div>`
       : `<div class="panel${this._chrome("background") ? " bg" : ""}${this._chrome("creature") ? "" : " nocreature"}">
            ${canvas}
@@ -1013,6 +1694,7 @@ class ClawdmeterCard extends HTMLElement {
              ${statsHTML}
              ${chips}
            </div>
+           ${graph}
          </div>`;
     root.innerHTML = `<style>${STYLE}</style>${body}`;
     this.shadowRoot.replaceChildren(root);
@@ -1020,7 +1702,11 @@ class ClawdmeterCard extends HTMLElement {
     this._ctx = this._cv ? this._cv.getContext("2d") : null;
     this._frameEl = this.shadowRoot.getElementById("frame");
     this._built = true;
+    this._graphEl = null;
+    this._graphToken = null;
+    if (graphCfg) this._mountGraph(graphCfg);
     this._drawFrame();
+    this._schedule();
   }
 
   $(id) {
@@ -1041,12 +1727,31 @@ class ClawdmeterCard extends HTMLElement {
           bar.style.width = `${Math.max(v || 0, 3)}%`;
           bar.style.background = this._band(v);
         }
-        if (el.reset) {
-          const sub = this.$("sub_" + el.id);
-          if (sub) sub.textContent = this._fmtReset(el.reset);
-          const subr = this.$("subr_" + el.id);
-          if (subr) subr.textContent = this._fmtClock(el.reset);
+        if (el.labelAttr) {
+          // The capped model can change while the card is shown.
+          const lbl = this.$("lbl_" + el.id);
+          if (lbl) lbl.textContent = this._label(el, this._t());
         }
+        if (el.capAttr) {
+          const p = parseFloat(this._attr(el.usage, el.capAttr));
+          const cap = this.$("cap_" + el.id);
+          if (cap)
+            cap.textContent = Number.isFinite(p)
+              ? this._t().model_cap.replace("{p}", this._fmtNum(p, 0))
+              : "";
+        }
+        if (el.reset || el.resetAttr) {
+          const raw = this._resetRaw(el);
+          const sub = this.$("sub_" + el.id);
+          if (sub) sub.textContent = this._fmtReset(raw);
+          const subr = this.$("subr_" + el.id);
+          if (subr) subr.textContent = this._clock(raw);
+        } else if (el.money) {
+          const sub = this.$("sub_" + el.id);
+          if (sub) sub.textContent = this._money();
+        }
+      } else if (el.kind === "split") {
+        this._updateSplit(el);
       } else if (el.kind === "runway") {
         this._updateRunway(el);
       } else {
@@ -1097,12 +1802,13 @@ class ClawdmeterCard extends HTMLElement {
     const sev = this._st("extra_severity");
     if (sev && sev !== "normal" && T.sev[sev])
       out.push([sev === "critical" ? "#E53935" : "#FFB300", T.sev[sev]]);
-    box.innerHTML = out
+    const html = out
       .map(
         ([c, txt]) =>
           `<span class="chip"><b style="background:${c}"></b>${esc(txt)}</span>`,
       )
       .join("");
+    if (box.innerHTML !== html) box.innerHTML = html;
   }
 
   _applyFrameColor() {
@@ -1124,10 +1830,27 @@ class ClawdmeterCard extends HTMLElement {
     if (pf === "red") el.classList.add("breathe", "fast");
   }
 
-  // ---- animation engine (mirrors clawdmeter_engine.h) ----
+  // The animation engine mirrors clawdmeter_engine.h on the device.
   _currentGroup() {
-    const g = this._st("animation_group");
+    const g = this._sw ? this._weeklyGroup() : this._st("animation_group");
     return GROUPS[g] && GROUPS[g].length ? g : "idle";
+  }
+
+  // The integration's animation group follows a five-minute rate, which stays
+  // at zero in the weekly window. Weekly mode reads the week pace instead, with
+  // the device's thresholds, and works for 30 minutes after the figure moved.
+  // last_changed also moves on a weekly reset and after an HA restart, so those
+  // show 30 minutes of work too; tracking the previous value would avoid that.
+  _weeklyGroup() {
+    const id = this._config.week_usage;
+    const s = id && this._hass && this._hass.states[id];
+    if (s && Date.now() - new Date(s.last_changed).getTime() < WORK_MS)
+      return "work";
+    const pace = this._num("week_pace");
+    if (pace == null) return "idle";
+    if (pace < -20) return "idle";
+    if (pace <= 0) return "normal";
+    return pace <= 10 ? "active" : "heavy";
   }
 
   _pick() {
@@ -1197,8 +1920,6 @@ class ClawdmeterCard extends HTMLElement {
   }
 }
 
-customElements.define("clawdmeter-card", ClawdmeterCard);
-
 class ClawdmeterCardEditor extends HTMLElement {
   setConfig(config) {
     this._config = Object.assign({}, config);
@@ -1206,8 +1927,10 @@ class ClawdmeterCardEditor extends HTMLElement {
   }
 
   set hass(hass) {
+    const first = !this._hass;
     this._hass = hass;
-    this._maybeRender();
+    // State changes do not touch the form; config changes sync via setConfig.
+    if (first) this._maybeRender();
   }
 
   _t() {
@@ -1253,12 +1976,105 @@ class ClawdmeterCardEditor extends HTMLElement {
       if (cb === active) return;
       cb.checked = this._isChecked(cb.dataset.el);
     });
+    const graph = root.getElementById("graph");
+    if (graph && graph !== active) graph.value = this._graphType();
+    const hours = root.getElementById("graph_hours");
+    if (hours && hours !== active) hours.value = this._config.graph_hours || 24;
+    const ver = root.getElementById("versions");
+    if (ver) ver.textContent = this._versions();
+    this._syncGraphHint();
+  }
+
+  // The integration reports its version on the account device.
+  _versions() {
+    const h = this._hass;
+    const ent = h.entities && h.entities[this._config.session_usage];
+    const devId = this._config.device || (ent && ent.device_id);
+    const dev = h.devices && h.devices[devId];
+    return this._t()
+      .ed_versions.replace("{i}", (dev && dev.sw_version) || "–")
+      .replace("{c}", CARD_VERSION);
+  }
+
+  _graphType() {
+    const g = this._config.graph;
+    return GRAPH_TYPES.includes(g) ? g : "none";
+  }
+
+  // Show the ApexCharts options only for that type, and offer the chosen
+  // optional card when it is missing.
+  _syncGraphHint() {
+    const root = this.shadowRoot;
+    if (!root) return;
+    const type = this._graphType();
+    const apex = root.getElementById("apex_opts");
+    if (apex) apex.hidden = type !== "apex";
+    // Only the scales this graph type can draw, its default first.
+    const rates = root.getElementById("rate_opts");
+    if (rates) rates.hidden = !RATE_SCALES[type];
+    const sel = root.getElementById("rate_scale");
+    if (sel && RATE_SCALES[type]) {
+      const T = this._t();
+      const cur = rateScale(type, this._config.rate_scale);
+      if (sel.dataset.type !== type) {
+        sel.dataset.type = type;
+        sel.innerHTML = RATE_SCALES[type]
+          .map((s) => `<option value="${s}">${esc(T.rate_scale[s])}</option>`)
+          .join("");
+      }
+      if (sel !== root.activeElement) sel.value = cur;
+    }
+    const hint = root.getElementById("card_hint");
+    if (!hint) return;
+    const card = GRAPH_CARDS[type];
+    hint.hidden = !card || !!customElements.get(card.tag);
+    if (hint.hidden || hint.dataset.type === type) return;
+    hint.dataset.type = type;
+    const T = this._t();
+    const comps = this._hass.config.components || [];
+    const admin = !!(this._hass.user && this._hass.user.is_admin);
+    const link = (href, text) =>
+      `<a href="${href}" target="_blank" rel="noopener">${esc(text)}</a>`;
+    const action = comps.includes("marketplace")
+      ? `${admin ? `<button type="button" id="card_install">${esc(T.ed_mini_install)}</button> ` : ""}${link(`/marketplace/repository/${card.id}`, T.ed_mini_store)}`
+      : comps.includes("hacs")
+        ? link(`/hacs/repository/${card.id}`, T.ed_mini_hacs)
+        : link(`https://github.com/${card.repo}`, T.ed_mini_github);
+    hint.innerHTML = `<span id="card_msg">${esc(T.ed_mini_missing.replace("{card}", card.tag))}</span> ${action}`;
+    const btn = root.getElementById("card_install");
+    if (btn) btn.addEventListener("click", () => this._installCard(card));
+  }
+
+  // The Marketplace installs the card and registers its dashboard resource;
+  // the browser only loads it after a reload.
+  async _installCard(card) {
+    const T = this._t();
+    const root = this.shadowRoot;
+    const btn = root.getElementById("card_install");
+    const msg = root.getElementById("card_msg");
+    btn.disabled = true;
+    btn.textContent = T.ed_mini_installing;
+    try {
+      await this._hass.callWS({
+        type: "marketplace/repository/install",
+        repository: card.id,
+      });
+      msg.textContent = T.ed_mini_done;
+      btn.remove();
+    } catch (err) {
+      msg.textContent = `${T.ed_mini_failed} ${(err && err.message) || err}`;
+      btn.disabled = false;
+      btn.textContent = T.ed_mini_install;
+    }
   }
 
   _isChecked(id) {
     const show = this._config.show || {};
     if (show[id] !== undefined) return !!show[id];
-    const el = ELEMENTS.find((e) => e.id === id);
+    const el =
+      ELEMENTS.find((e) => e.id === id) ||
+      GRAPH_SERIES.find((g) => g.id === id) ||
+      APEX_OPTS.find((o) => o.id === id);
     return el ? el.on : true;
   }
 
@@ -1277,17 +2093,32 @@ class ClawdmeterCardEditor extends HTMLElement {
           )
           .join("")
       : `<option value="">${esc(T.ed_nodev)}</option>`;
+    // Name the per-model cap after the model the account reports ("Fable").
+    const modelId =
+      this._config.model_usage || (devs[sel] && devs[sel].keys.model_usage);
+    const modelSt = modelId && this._hass.states[modelId];
+    const modelName = modelSt && modelSt.attributes && modelSt.attributes.model;
+    const modelLbl = modelName
+      ? T.model_lbl.replace("{m}", modelName)
+      : T.el.model;
     const mkCheck = (id, label) =>
       `<label class="chk"><input type="checkbox" data-el="${id}" ${this._isChecked(id) ? "checked" : ""}><span>${esc(label)}</span></label>`;
     const chromeChecks = CHROME.map((c) => mkCheck(c.id, T.ch[c.id])).join("");
-    const barChecks = ELEMENTS.filter(
-      (e) => e.kind === "bar" || e.kind === "runway",
-    )
-      .map((el) => mkCheck(el.id, T.el[el.id]))
+    const barChecks = ELEMENTS.filter((e) => e.kind !== "stat")
+      .map((el) => mkCheck(el.id, el.id === "model" ? modelLbl : T.el[el.id]))
       .join("");
     const valChecks = ELEMENTS.filter((e) => e.kind === "stat")
       .map((el) => mkCheck(el.id, T.el[el.id]))
       .join("");
+    const graphType = this._graphType();
+    const apexChecks = APEX_OPTS.map((o) => mkCheck(o.id, T.g[o.id])).join("");
+    const graphOpts = GRAPH_TYPES.map(
+      (g) =>
+        `<option value="${g}" ${g === graphType ? "selected" : ""}>${esc(T.graph[g])}</option>`,
+    ).join("");
+    const seriesChecks = GRAPH_SERIES.map((g) =>
+      mkCheck(g.id, g.id === "g_model" ? modelLbl : T.g[g.id]),
+    ).join("");
     this.shadowRoot.innerHTML = `<style>${EDITOR_STYLE}</style>
       <div class="ed">
         <label class="lbl">${esc(T.ed_account)}</label>
@@ -1306,6 +2137,22 @@ class ClawdmeterCardEditor extends HTMLElement {
         <div class="checks">${barChecks}</div>
         <label class="lbl">${esc(T.ed_values)}</label>
         <div class="checks">${valChecks}</div>
+        <label class="lbl">${esc(T.ed_graph)}</label>
+        <select id="graph">${graphOpts}</select>
+        <div class="hint" id="card_hint" hidden></div>
+        <label class="lbl">${esc(T.ed_graph_hours)}</label>
+        <input id="graph_hours" type="number" min="1" max="720" value="${esc(String(this._config.graph_hours || 24))}">
+        <label class="lbl">${esc(T.ed_graph_series)}</label>
+        <div class="checks">${seriesChecks}</div>
+        <div id="apex_opts" hidden>
+          <label class="lbl">${esc(T.ed_apex)}</label>
+          <div class="checks">${apexChecks}</div>
+        </div>
+        <div id="rate_opts" hidden>
+          <label class="lbl">${esc(T.ed_rates)}</label>
+          <select id="rate_scale"></select>
+        </div>
+        <div class="hint ver" id="versions">${esc(this._versions())}</div>
       </div>`;
 
     this.shadowRoot
@@ -1322,6 +2169,29 @@ class ClawdmeterCardEditor extends HTMLElement {
       else delete this._config.title;
       this._emit();
     });
+    this.shadowRoot.getElementById("graph").addEventListener("change", (e) => {
+      this._config = { ...this._config };
+      if (e.target.value === "none") delete this._config.graph;
+      else this._config.graph = e.target.value;
+      this._syncGraphHint();
+      this._emit();
+    });
+    this.shadowRoot
+      .getElementById("rate_scale")
+      .addEventListener("change", (e) => {
+        this._config = { ...this._config, rate_scale: e.target.value };
+        this._emit();
+      });
+    this.shadowRoot
+      .getElementById("graph_hours")
+      .addEventListener("change", (e) => {
+        const v = Number(e.target.value);
+        this._config = { ...this._config };
+        if (v > 0 && v !== 24) this._config.graph_hours = v;
+        else delete this._config.graph_hours;
+        this._emit();
+      });
+    this._syncGraphHint();
     this.shadowRoot.querySelectorAll('input[type="checkbox"]').forEach((cb) =>
       cb.addEventListener("change", (e) => {
         const show = { ...(this._config.show || {}) };
@@ -1381,18 +2251,23 @@ class ClawdmeterCardEditor extends HTMLElement {
   }
 }
 
-customElements.define("clawdmeter-card-editor", ClawdmeterCardEditor);
-
-window.customCards = window.customCards || [];
-window.customCards.push({
-  type: "clawdmeter-card",
-  name: "Clawdmeter Card",
-  description:
-    "Animated Claude-usage creature with live burn rate, runway and usage bars.",
-  preview: true,
-  documentationURL: "https://github.com/corgan2222/lovelace-clawdmeter",
-});
-console.info(
-  "%c CLAWDMETER-CARD ",
-  "background:#CE7D6B;color:#0E1322;font-weight:700",
-);
+// The file can be loaded twice (a dashboard resource next to extra_module_url);
+// a second define would throw, so the first load wins.
+if (!customElements.get("clawdmeter-card")) {
+  customElements.define("clawdmeter-card", ClawdmeterCard);
+  customElements.define("clawdmeter-card-editor", ClawdmeterCardEditor);
+  window.customCards = window.customCards || [];
+  window.customCards.push({
+    type: "clawdmeter-card",
+    name: "Clawdmeter Card",
+    description:
+      "Animated Claude-usage creature with live burn rate, runway and usage bars.",
+    preview: true,
+    documentationURL: "https://github.com/corgan2222/lovelace-clawdmeter",
+  });
+  console.info(
+    `%c CLAWDMETER-CARD %c ${CARD_VERSION} `,
+    "background:#CE7D6B;color:#0E1322;font-weight:700",
+    "background:#0E1322;color:#CE7D6B",
+  );
+}
