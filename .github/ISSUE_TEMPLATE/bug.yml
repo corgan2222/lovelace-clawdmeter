@@ -6,8 +6,7 @@ body:
   - type: markdown
     attributes:
       value: >-
-        Thanks for testing the card — it is still **work in progress**. Before
-        opening an issue, please **hard-refresh** your browser (Ctrl+Shift+R, or
+        Thanks for reporting a problem. Before opening an issue, please **hard-refresh** your browser (Ctrl+Shift+R, or
         clear the cache) to rule out a stale cached version, and search the
         existing issues for the same problem.
   - type: checkboxes

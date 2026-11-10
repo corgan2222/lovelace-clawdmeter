@@ -6,4 +6,4 @@
 
 - [ ] `node --check clawdmeter.js` passes
 - [ ] `npx prettier --check "**/*.js"` passes
-- [ ] Verified the change in a real Home Assistant dashboard (note: the card is still WIP)
+- [ ] Verified the change in a real Home Assistant dashboard

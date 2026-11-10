@@ -1,7 +1,5 @@
 # Contributing
 
-> ⚠️ This card is **work in progress and untested** — see the [README](README.md).
-
 ## Branch policy
 
 `main` is protected and **cannot be pushed to directly** — every change goes through a pull
